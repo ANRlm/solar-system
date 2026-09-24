@@ -243,6 +243,42 @@ kbd{display:inline-block;min-width:24px;height:22px;padding:0 6px;border-radius:
 .ld-bar{width:260px;height:2px;margin:0 auto 12px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden}
 #ldBar{display:block;height:100%;background:linear-gradient(90deg,#ff9a3c,#ffe0a0);transform-origin:left;transform:scaleX(0);transition:transform .2s}
 .ld-m{font-size:11px;color:#98a4b4;letter-spacing:.1em}
+
+/* ---------- 搜索 ---------- */
+#search{position:fixed;left:50%;top:calc(var(--top) + 4px);width:min(460px,calc(100vw - 24px));padding:6px;transform:translate(-50%,-8px);opacity:0;pointer-events:none;transition:opacity .2s var(--ease),transform .2s var(--ease);background:var(--glass2);z-index:6}
+#search.open{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.s-in{display:flex;align-items:center;gap:10px;height:46px;padding:0 12px}
+.s-in svg{width:18px;height:18px;fill:none;stroke:var(--fg2);stroke-width:1.8;stroke-linecap:round;display:block}
+#sq{flex:1;min-width:0;background:none;border:0;outline:0;color:#fff;font:inherit;font-size:15px;letter-spacing:.02em}
+#sq::placeholder{color:var(--mut)}
+.s-in kbd{font-size:10px;color:var(--mut);border:1px solid var(--line2);border-radius:5px;padding:1px 6px}
+#sres{max-height:min(430px,58vh);overflow:auto;border-top:1px solid var(--line);padding:6px 0 2px}
+#sres:empty{display:none}
+.s-none{padding:14px 12px;color:var(--mut);font-size:13px}
+
+/* ---------- 距离工具 ---------- */
+#dist{position:fixed;left:22px;top:calc(var(--top) + 34px);width:280px;padding:12px 12px 14px;opacity:0;transform:translateX(-8px);pointer-events:none;transition:opacity .25s var(--ease),transform .25s var(--ease);z-index:3}
+#dist.open{opacity:1;transform:none;pointer-events:auto}
+.d-top{display:flex;align-items:center;gap:8px;margin:0 0 10px 4px}
+.d-top svg{width:16px;height:16px;fill:none;stroke:var(--acc);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;display:block}
+.d-top h4{flex:1;margin:0;font-size:12px;font-weight:500;letter-spacing:.16em;color:var(--fg2)}
+.d-pick{display:flex;align-items:center;gap:12px;width:100%;padding:9px 10px;border-radius:10px;background:rgba(255,255,255,.05);text-align:left;transition:background .2s}
+.d-pick:hover{background:rgba(255,255,255,.1)}
+.d-pick .sw{margin:0 4px 0 2px}
+.d-pick small{display:block;font-size:10px;letter-spacing:.14em;color:var(--mut)}
+.d-pick b{display:block;font-weight:400;font-size:13px}
+.d-pick .await b{color:var(--acc);font-size:12px}
+.d-pick:has(.await){outline:1px dashed rgba(255,196,110,.45);outline-offset:-1px}
+#distSwap{display:block;margin:2px auto}
+#distOut{margin-top:12px}
+#distOut:empty{display:none}
+.dtag{position:absolute;left:0;top:0;padding:3px 9px;border-radius:10px;font-size:11px;letter-spacing:.06em;color:#ffe3b8;background:rgba(20,16,10,.62);border:1px solid rgba(255,196,110,.4);opacity:0;transition:opacity .3s;white-space:nowrap}
+.dtag.on{opacity:1}
+
+/* ---------- 星座名 ---------- */
+.cname{position:absolute;left:0;top:0;font-size:10px;letter-spacing:.3em;color:rgba(150,180,230,.5);white-space:nowrap;opacity:0;transition:opacity .4s;pointer-events:none}
+.cname.on{opacity:1}
+html[lang=en] .cname{letter-spacing:.16em;text-transform:uppercase;font-size:9px}
 /* 英文：为中文设计的大字距对拉丁字母过松，标题收紧 */
 html[lang=en] .brand b{letter-spacing:.2em}
 html[lang=en] #iName{letter-spacing:.04em}
@@ -257,6 +293,7 @@ html[lang=en] .ld-t{letter-spacing:.3em;margin-right:-.3em}
   #datePop{top:auto;bottom:calc(var(--dock-h) + 30px + var(--safe-b))}
 }
 @media (max-width:760px){
+  #dist{left:8px;right:8px;width:auto}
   :root{--top:56px}
   #top{padding:10px 8px 0 14px;gap:10px}
   .brand{display:none}
@@ -305,6 +342,7 @@ html[lang=en] .ld-t{letter-spacing:.3em;margin-right:-.3em}
     </div></div>
     <div class="tools">
       <button id="fpsPill" class="pill glass hit" title="性能详情" aria-haspopup="dialog"><b id="fps">--</b><small>FPS</small><canvas id="graph" width="104" height="36"></canvas></button>
+      <button id="bSearch" class="ic hit autohide fade" data-ic="search" title="搜索（/）" aria-label="搜索"></button>
       <button id="bMusic" class="ic hit autohide fade" title="音乐（M）" aria-label="音乐开关"></button>
       <button id="bSettings" class="ic hit autohide fade" data-ic="sliders" title="设置（S）" aria-label="设置"></button>
       <button id="bHide" class="ic hit autohide fade" data-ic="eye" title="隐藏界面（H）" aria-label="隐藏界面"></button>
@@ -381,6 +419,7 @@ html[lang=en] .ld-t{letter-spacing:.3em;margin-right:-.3em}
     <section class="pane" data-pane="display">
       <div class="group"><h4>场景</h4>
         <div class="row"><span>轨道线</span><label class="sw-t"><input type="checkbox" data-k="orbits" aria-label="轨道线"><i></i></label></div>
+        <div class="row"><span>星座连线<small>88 个星座的连线与名称</small></span><label class="sw-t"><input type="checkbox" data-k="constellations" aria-label="星座连线"><i></i></label></div>
         <div class="row"><span>天体标签</span><label class="sw-t"><input type="checkbox" data-k="labels" aria-label="天体标签"><i></i></label></div>
         <div class="row"><span>小行星带</span><label class="sw-t"><input type="checkbox" data-k="belt" aria-label="小行星带"><i></i></label></div>
       </div>
@@ -409,6 +448,17 @@ html[lang=en] .ld-t{letter-spacing:.3em;margin-right:-.3em}
   </aside>
 
   <div id="groupPop" class="pop glass hit" role="dialog"></div>
+  <div id="search" class="glass hit" role="dialog" aria-label="搜索天体">
+    <div class="s-in"><span data-ic="search"></span><input id="sq" type="text" autocomplete="off" spellcheck="false"><kbd>Esc</kbd></div>
+    <div id="sres"></div>
+  </div>
+  <div id="dist" class="glass hit" role="dialog" aria-label="距离工具">
+    <div class="d-top"><span data-ic="ruler"></span><h4>距离工具</h4><button class="ic sm" id="distClose" data-ic="close" aria-label="关闭距离工具"></button></div>
+    <button id="distA" class="d-pick"></button>
+    <button id="distSwap" class="ic sm" data-ic="swap" title="交换起点与终点" aria-label="交换起点与终点"></button>
+    <button id="distB" class="d-pick"></button>
+    <div id="distOut" class="kv"></div>
+  </div>
 
   <div id="caption" aria-live="polite">
     <div class="c-kick"><span id="cKick"></span></div>
@@ -439,6 +489,8 @@ html[lang=en] .ld-t{letter-spacing:.3em;margin-right:-.3em}
       <span><kbd>I</kbd></span><span>收起信息卡</span><span><kbd>L</kbd></span><span>中英文切换</span>
       <span><kbd>M</kbd></span><span>音乐开关</span><span><kbd>S</kbd></span><span>设置</span>
       <span><kbd>H</kbd></span><span>隐藏界面</span><span><kbd>F</kbd></span><span>全屏</span>
+      <span><kbd>/</kbd></span><span>搜索天体</span><span><kbd>D</kbd></span><span>距离工具</span>
+      <span><kbd>C</kbd></span><span>星座连线</span>
     </div>
   </div>
 </div>

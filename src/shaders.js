@@ -522,6 +522,9 @@ export const STAR_VERT = /* glsl */ `
 attribute float aI;attribute vec3 aColor;uniform float uPR,uGain;varying vec3 vCol;
 void main(){vec4 c=projectionMatrix*vec4(mat3(viewMatrix)*position,1.);gl_Position=vec4(c.xy,c.w*.99999,c.w);
 float i=aI*uGain;vCol=aColor*i;gl_PointSize=uPR*(2.2+2.6*sqrt(min(i,4.)));}`;
+// 星座连线：与恒星一样在无穷远处，淡蓝细线
+export const CONST_VERT = /* glsl */ `void main(){vec4 c=projectionMatrix*vec4(mat3(viewMatrix)*position,1.);gl_Position=vec4(c.xy,c.w*.99999,c.w);}`;
+export const CONST_FRAG = /* glsl */ `uniform vec3 uColor;void main(){gl_FragColor=vec4(uColor,1.);}`;
 export const STAR_FRAG = /* glsl */ `varying vec3 vCol;
 void main(){float d=length(gl_PointCoord-.5)*2.;float a=exp(-d*d*5.)+exp(-d*d*28.)*.6;if(d>1.)discard;gl_FragColor=vec4(vCol*a,1.);}`;
 

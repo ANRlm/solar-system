@@ -14,8 +14,11 @@ A real-time, cinematic Solar System in a single offline HTML file — planet pos
 - **自动漫游**：19 站电影化镜头，闲置 90 秒自动开始
 - **配乐**：Web Audio 实时合成，随聚焦天体切换调性与音色
 - **中英文切换**：顶栏按钮或 <kbd>L</kbd> 键，首次访问跟随浏览器语言
+- **搜索**：<kbd>/</kbd> 或 <kbd>⌘K</kbd>，按中英文名或类型（如“土星的卫星”“comet”）查找天体
+- **距离工具**：<kbd>D</kbd> 或信息卡的“测距”，任选两个天体，显示真实距离与光行时间
+- **星座连线**：<kbd>C</kbd> 或设置里的开关，88 个星座的连线与中英文名称
 
-快捷键：拖动旋转、滚轮缩放、单击聚焦；<kbd>O</kbd> 全景、<kbd>T</kbd> 漫游、<kbd>空格</kbd> 暂停、<kbd>[</kbd> <kbd>]</kbd> 调速、<kbd>?</kbd> 全部快捷键。
+快捷键：拖动旋转、滚轮缩放、单击聚焦；<kbd>O</kbd> 全景、<kbd>T</kbd> 漫游、<kbd>/</kbd> 搜索、<kbd>D</kbd> 测距、<kbd>C</kbd> 星座、<kbd>空格</kbd> 暂停、<kbd>[</kbd> <kbd>]</kbd> 调速、<kbd>?</kbd> 全部快捷键。
 
 ## 构建
 
@@ -32,7 +35,7 @@ npm test             # 天文校验、冒烟、配乐、界面流程（需要本
 
 - 行星贴图 © [Solar System Scope](https://www.solarsystemscope.com/textures/)，[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，基于 NASA 数据（转为 WebP，见 `tools/fetch-textures.mjs`）
 - 月球高程：NASA Scientific Visualization Studio
-- 恒星：Hipparcos 星表；银河轮廓：[d3-celestial](https://github.com/ofrohn/d3-celestial)
+- 恒星：Hipparcos 星表；银河轮廓与星座连线：[d3-celestial](https://github.com/ofrohn/d3-celestial)
 - 海岸线：Natural Earth（经 [world-atlas](https://github.com/topojson/world-atlas)）
 - 渲染：[three.js](https://threejs.org/)
 

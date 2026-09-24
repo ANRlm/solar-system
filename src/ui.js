@@ -1,6 +1,6 @@
 // 界面层：顶栏、信息卡、底部坞、设置抽屉、弹出层、提示与快捷键。引擎能力通过 app 接口调用
 
-import { L, nameOf, textOf, tourFact, yearMonth, isEn, setLang, onLang, applyDom } from './i18n.js';
+import { L, nameOf, textOf, textEn, tourFact, yearMonth, isEn, setLang, onLang, applyDom } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,6 +20,9 @@ const LINE = {
   rotate: '<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4.5h-4.5"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   comet: '<circle cx="16" cy="8" r="3"/><path d="M13.8 10.2L4 20M12 7.5L6 13.5M16.5 11L10.5 17"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
+  ruler: '<path d="M3.5 16.5l13-13 4 4-13 13z"/><path d="M7.2 12.8l1.8 1.8M10 10l1.8 1.8M12.8 7.2l1.8 1.8"/>',
+  swap: '<path d="M7 4v16M4 17l3 3 3-3M17 20V4M14 7l3-3 3 3"/>',
 };
 const SOLID = {
   rewind: '<path d="M11 6.5v11L3.5 12zM20.5 6.5v11L13 12z"/>',
@@ -125,12 +128,14 @@ export function createUI(app) {
     const acts = [];
     acts.push(`<button class="btn${app.isOrbiting() ? ' on' : ''}" data-act="orbit">${icon('rotate')}${L('环绕')}</button>`);
     if (b.parent) acts.push(`<button class="btn" data-act="parent">${icon('up')}${L('返回{0}', nameOf(b.parent))}</button>`);
+    acts.push(`<button class="btn" data-act="dist">${icon('ruler')}${L('测距')}</button>`);
     if (b.def.kind === 'comet') acts.push(`<button class="btn" data-act="peri">${icon('comet')}${L('跳到下次近日点')}</button>`);
     $('iActions').innerHTML = acts.join('');
     $('iActions').querySelectorAll('[data-act]').forEach((el) => (el.onclick = () => {
       const a = el.dataset.act;
       if (a === 'orbit') { app.setOrbit(!app.isOrbiting()); el.classList.toggle('on', app.isOrbiting()); }
       else if (a === 'parent') app.focusOn(b.parent.id);
+      else if (a === 'dist') openDist(b);
       else if (a === 'peri') { app.setTime(app.nextPerihelion(b)); app.focusOn(b.id); toast(L('已跳到下次过近日点')); }
     }));
   }
@@ -329,6 +334,85 @@ export function createUI(app) {
   const setHelp = (open) => $('help').classList.toggle('open', open);
   $('bHide').onclick = () => { toggleHide(); toast(L('按 H 恢复界面')); };
 
+  // ---------------------------------------------------------------- 搜索（/ 或 ⌘K）：按中英文名、id、类型匹配；距离工具也用它选天体
+  const sun = bodies.find((b) => b.id === 'sun');
+  const SYS = { id: 'system', def: app.SYSTEM };
+  const search = $('search'), sq = $('sq');
+  let pickCb = null, results = [], sel = 0;
+  const norm = (s) => s.toLowerCase().replace(/[\s·'’\-]/g, '');
+  // 分数越小越靠前：名称完全相同 0、前缀 1、包含 2；类型匹配 3（中文类型按包含，如“土星的卫星”；英文类型按词首，如 comet、moon）
+  function score(o, q) {
+    let best = 9;
+    for (const n of [o.def.name, o.def.en, o.id].map(norm)) best = Math.min(best, n === q ? 0 : n.startsWith(q) ? 1 : n.includes(q) ? 2 : 9);
+    if (best > 2 && (norm(o.def.type).includes(q) || textEn(o.def, 'type').toLowerCase().split(/[^a-z0-9]+/).some((w) => w && w.startsWith(q)))) best = 3;
+    return best;
+  }
+  function renderResults() {
+    const q = norm(sq.value), pool = pickCb ? bodies : [SYS, ...bodies];
+    results = q ? pool.map((o, i) => [score(o, q), i, o]).filter(([s]) => s < 9).sort((a, b) => a[0] - b[0] || a[1] - b[1]).slice(0, 12).map((r) => r[2])
+      : pool.filter((o) => !o.parent && ['star', 'planet'].includes(o.def.kind) || o === SYS);
+    sel = Math.min(sel, Math.max(0, results.length - 1));
+    $('sres').innerHTML = results.length ? results.map((o, i) => `<button class="gi${i === sel ? ' active' : ''}" data-i="${i}">${swatch(o)}<span><b>${nameOf(o)}</b><small>${textOf(o.def, 'type')} · ${isEn() ? o.def.name : o.def.en}</small></span></button>`).join('')
+      : `<p class="s-none">${L('没有找到“{0}”', sq.value.trim())}</p>`;
+    $('sres').querySelector('.active')?.scrollIntoView({ block: 'nearest' });
+  }
+  function openSearch(cb, placeholder) {
+    closePops();
+    pickCb = cb || null;
+    sq.value = '';
+    sq.placeholder = placeholder || L('搜索天体、卫星、彗星…');
+    sel = 0;
+    renderResults();
+    search.classList.add('open');
+    $('bSearch').classList.add('on');
+    sq.focus();
+  }
+  function closeSearch() {
+    search.classList.remove('open');
+    $('bSearch').classList.remove('on');
+    pickCb = null;
+    sq.blur();
+  }
+  function chooseResult(o) {
+    const cb = pickCb;
+    closeSearch();
+    if (!o) return;
+    if (cb) cb(o);
+    else if (o === SYS) app.overview();
+    else app.focusOn(o.id);
+  }
+  sq.oninput = () => { sel = 0; renderResults(); };
+  sq.onkeydown = (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sel = (sel + (e.key === 'ArrowDown' ? 1 : -1) + results.length) % Math.max(1, results.length); renderResults(); }
+    else if (e.key === 'Enter') { e.preventDefault(); chooseResult(results[sel]); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
+  };
+  $('sres').onclick = (e) => { const el = e.target.closest('[data-i]'); if (el) chooseResult(results[+el.dataset.i]); };
+  $('bSearch').onclick = (e) => { e.stopPropagation(); search.classList.contains('open') ? closeSearch() : openSearch(); };
+  document.addEventListener('pointerdown', (e) => { if (search.classList.contains('open') && !e.target.closest('#search, #bSearch')) closeSearch(); });
+
+  // ---------------------------------------------------------------- 距离工具：起点 / 终点可点画面中的天体或搜索；显示真实距离与光行时间
+  const dist = { a: null, b: null, open: false };
+  const distEl = $('dist');
+  function renderDist() {
+    const field = (o, role) => o ? `${swatch(o)}<span><small>${L(role)}</small><b>${nameOf(o)}</b></span>` : `<span class="await"><small>${L(role)}</small><b>${L('点击画面中的天体，或点此搜索')}</b></span>`;
+    $('distA').innerHTML = field(dist.a, '起点');
+    $('distB').innerHTML = field(dist.b, '终点');
+    $('distOut').innerHTML = dist.a && dist.b ? kv(app.measure(dist.a, dist.b).rows) : '';
+  }
+  function openDist(from) {
+    Object.assign(dist, { a: from.id === 'system' ? sun : from, b: null, open: true });
+    renderDist();
+    distEl.classList.add('open');
+  }
+  function closeDist() { dist.open = false; distEl.classList.remove('open'); }
+  const pickFor = (k) => openSearch((o) => { dist[k] = o; if (dist.a === dist.b) dist[k === 'a' ? 'b' : 'a'] = null; renderDist(); }, L(k === 'a' ? '选择起点' : '选择终点'));
+  $('distA').onclick = () => pickFor('a');
+  $('distB').onclick = () => pickFor('b');
+  $('distSwap').onclick = () => { [dist.a, dist.b] = [dist.b, dist.a]; renderDist(); };
+  $('distClose').onclick = closeDist;
+  const toggleDist = () => (dist.open ? closeDist() : openDist(focus || sun));
+
   // ---------------------------------------------------------------- 中英文切换：原地重绘所有动态文字，时间、聚焦与设置都保持不变
   const syncLangBtn = () => ($('bLang').textContent = isEn() ? '中' : 'EN');
   syncLangBtn();
@@ -345,6 +429,8 @@ export function createUI(app) {
     renderEvents();
     syncTime();
     if (lastStop && cap.classList.contains('show')) renderCaption(lastStop);
+    if (dist.open) renderDist();
+    if (search.classList.contains('open')) renderResults();
     closePops();
   });
   $('bFull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.());
@@ -392,17 +478,20 @@ export function createUI(app) {
 
   // ---------------------------------------------------------------- 键盘
   addEventListener('keydown', (e) => {
-    if (e.target.closest?.('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.closest?.('input, select, textarea')) return;
     const k = e.key;
     if (!entered) return;
+    if ((e.metaKey || e.ctrlKey) && k.toLowerCase() === 'k') { e.preventDefault(); openSearch(); return; }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (app.isTour() && (k === 'ArrowRight' || k === 'ArrowLeft')) { e.preventDefault(); app.tourStep(k === 'ArrowRight' ? 1 : -1); return; }
-    if (k === 'Escape') { closePops(); setDrawer(false); setHelp(false); body.classList.remove('hide-ui'); return; }
+    if (k === 'Escape') { closePops(); setDrawer(false); setHelp(false); closeDist(); body.classList.remove('hide-ui'); return; }
     if (k === ' ') { if (e.target.closest?.('button')) return; e.preventDefault(); $('bPlay').click(); }
     else if (k === '[' || k === ']') setRate(sim.ri + (k === ']' ? 1 : -1));
     else if (/^[0-9]$/.test(k)) app.focusOn(app.KEYS[+k]);
-    else if (k === '?' || k === '/') setHelp(!$('help').classList.contains('open'));
+    else if (k === '/') { e.preventDefault(); openSearch(); }
+    else if (k === '?') setHelp(!$('help').classList.contains('open'));
     else {
-      const act = { l: toggleLang, h: toggleHide, r: () => $('bRev').click(), t: () => app.toggleTour(), o: () => app.overview(), m: () => $('bMusic').click(), s: () => $('bSettings').click(), i: toggleInfo, f: () => $('bFull').click() }[k.toLowerCase()];
+      const act = { d: toggleDist, c: () => { app.setSetting({ constellations: !settings.constellations }, false); toast(L(settings.constellations ? '星座连线已开启' : '星座连线已关闭')); }, l: toggleLang, h: toggleHide, r: () => $('bRev').click(), t: () => app.toggleTour(), o: () => app.overview(), m: () => $('bMusic').click(), s: () => $('bSettings').click(), i: toggleInfo, f: () => $('bFull').click() }[k.toLowerCase()];
       act?.();
     }
   });
@@ -448,6 +537,7 @@ export function createUI(app) {
       $('date').textContent = date;
       $('time').textContent = time;
       if (focus) $('iLive').innerHTML = kv(app.liveRows(focus));
+      if (dist.open && dist.a && dist.b) $('distOut').innerHTML = kv(app.measure(dist.a, dist.b).rows);
       if ($('datePop').classList.contains('open')) syncDateInput();
       const idle = settings.autohide && app.isTour() && now - lastInput > 4000 && !drawer.classList.contains('open');
       body.classList.toggle('idle', idle);
@@ -479,8 +569,9 @@ export function createUI(app) {
     else if (infoOn && W > 760) right = r.left - 12;
     if (infoOn && W <= 760) bottom = r.top - 12;
     if (body.classList.contains('hide-ui') || body.classList.contains('idle')) { right = W; bottom = H; }
+    if (dist.open && W > 760) left = distEl.getBoundingClientRect().right + 12;
     // 漫游字幕在左下角：主体略向右让开
-    if (cap.classList.contains('show') && W > 760) left = Math.min(cap.offsetWidth, W * 0.3) * 0.55;
+    if (cap.classList.contains('show') && W > 760) left = Math.max(left, Math.min(cap.offsetWidth, W * 0.3) * 0.55);
     safe.dx = (left + right) / 2 - W / 2;
     safe.dy = (top + bottom) / 2 - H / 2;
   }
@@ -502,6 +593,14 @@ export function createUI(app) {
     onStop,
     onOrbit(on) { $('iActions').querySelector('[data-act=orbit]')?.classList.toggle('on', on); },
     sync, progress, ready, frame, toast, syncTime,
+    // 距离工具等待终点时，点画面中的天体即选为终点（返回 true 表示已处理）
+    pickTarget(b) {
+      if (!dist.open || !dist.a || dist.b || b === dist.a) return false;
+      dist.b = b;
+      renderDist();
+      return true;
+    },
+    distPair: () => (dist.open && dist.a && dist.b ? [dist.a, dist.b] : null),
     get fps() { return Math.round(perf.fps); },
   };
 }

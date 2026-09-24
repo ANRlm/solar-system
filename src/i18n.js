@@ -15,6 +15,7 @@ export function L(zh, ...args) {
 // 天体文字：名称用 data.js 里的英文名；类型、简介、参数用 data-en.js
 export const nameOf = (b) => (lang === 'en' ? b.def.en : b.def.name);
 export const textOf = (def, field) => (lang === 'en' ? BODIES_EN[def.id]?.[field] ?? def[field] : def[field]);
+export const textEn = (def, field) => BODIES_EN[def.id]?.[field] ?? def[field];
 export const tourFact = (id, zh) => (lang === 'en' ? TOUR_EN[id] ?? zh : zh);
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const yearMonth = (t) => { const d = new Date(t); return lang === 'en' ? `${MON[d.getMonth()]} ${d.getFullYear()}` : `${d.getFullYear()} 年 ${d.getMonth() + 1} 月`; };
@@ -118,5 +119,10 @@ const EN = {
   '空格': 'Space', '暂停 / 继续': 'Pause / resume', '调节时间流速': 'Change time rate', '漫游上一站 / 下一站': 'Previous / next tour stop', '中英文切换': 'Chinese / English',
   // 提示与加载
   '按 H 恢复界面': 'Press H to bring the UI back', '正在重新生成行星表面': 'Regenerating planet surfaces', '点击画面任意处即可开启音乐': 'Click anywhere to start the music',
-  '正在初始化': 'Initialising', '正在生成行星表面': 'Generating planet surfaces', '正在载入星表与地图数据': 'Loading star catalogue and map data',
+  '正在初始化': 'Initialising',
+  // 搜索、距离工具、星座
+  '搜索（/）': 'Search (/)', '搜索': 'Search', '搜索天体': 'Search bodies', '搜索天体、卫星、彗星…': 'Search planets, moons, comets…', '没有找到“{0}”': 'No results for “{0}”',
+  '距离工具': 'Distance tool', '关闭距离工具': 'Close distance tool', '交换起点与终点': 'Swap start and target', '起点': 'FROM', '终点': 'TO',
+  '点击画面中的天体，或点此搜索': 'Click a body in the scene, or search', '选择起点': 'Choose the start…', '选择终点': 'Choose the target…', '测距': 'Measure', '距离': 'Distance',
+  '星座连线': 'Constellations', '88 个星座的连线与名称': 'Lines and names of the 88 constellations', '星座连线已开启': 'Constellations on', '星座连线已关闭': 'Constellations off', '正在生成行星表面': 'Generating planet surfaces', '正在载入星表与地图数据': 'Loading star catalogue and map data',
 };

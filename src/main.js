@@ -9,7 +9,7 @@ import { BODIES, OCCLUDERS, PRESETS, SYSTEM, TOUR } from './data.js';
 import * as S from './shaders.js';
 import { Music, Player } from './audio.js';
 import { createUI } from './ui.js';
-import { L, nameOf, isEn } from './i18n.js';
+import { L, nameOf, isEn, onLang } from './i18n.js';
 
 const V3 = THREE.Vector3;
 const DEG = Math.PI / 180, AU_KM = 149597870.7, C_KMS = 299792.458, OBL = 23.4392911 * DEG;
@@ -62,7 +62,7 @@ function moonGeo(d, o) {
 const DEFAULT = matchMedia('(pointer: coarse)').matches ? 'medium' : 'high';
 let settings;
 try { settings = JSON.parse(localStorage.getItem('solar.settings')); } catch { settings = null; }
-settings = { preset: DEFAULT, ...PRESETS[DEFAULT], exposure: 1, orbits: true, labels: true, belt: true, music: true, volume: 0.6, adaptive: true, sfx: true, autohide: true, idleTour: true, ...settings };
+settings = { preset: DEFAULT, ...PRESETS[DEFAULT], exposure: 1, orbits: true, labels: true, belt: true, music: true, volume: 0.6, adaptive: true, sfx: true, autohide: true, idleTour: true, constellations: false, ...settings };
 const saveSettings = () => localStorage.setItem('solar.settings', JSON.stringify(settings));
 
 // ================================================================ 渲染器
@@ -468,6 +468,24 @@ async function buildStars() {
   scene.add(stars);
 }
 const starCount = (lim) => { let i = 0; while (i < starMags.length && starMags[i] <= lim) i++; return i; };
+
+// 星座连线（默认关闭）：与恒星同在无穷远处、先于行星绘制；名称标在 d3-celestial 给出的位置
+const CONST = __CONST__;
+const constLines = (() => {
+  const s = CONST.segs, pos = new Float32Array((s.length / 2) * 3);
+  for (let i = 0; i < s.length / 2; i++) radec((((s[i * 2] % 360) + 360) % 360) * DEG, s[i * 2 + 1] * DEG, tmp).toArray(pos, i * 3);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.LineSegments(g, new THREE.ShaderMaterial({
+    vertexShader: S.CONST_VERT, fragmentShader: S.CONST_FRAG, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uColor: { value: new THREE.Color(0.07, 0.11, 0.2) } },
+  }));
+  m.renderOrder = -1;
+  m.frustumCulled = false;
+  scene.add(m);
+  return m;
+})();
+const constNames = CONST.names.map(([zh, en, lon, lat]) => ({ zh, en, dir: radec((((lon % 360) + 360) % 360) * DEG, lat * DEG) }));
 
 // ================================================================ GPU 程序化纹理生成
 let landTex, milkyTex, texRTs = [];
@@ -979,17 +997,73 @@ canvas.addEventListener('pointerup', (e) => {
     const t = hit ? hit.distanceTo(camera.position) : Infinity;
     if (t < bt) { bt = t; best = b; }
   }
+  if (best && ui.pickTarget(best)) return;
   if (best && (best !== nav.focus || nav.overview)) pick(best.id);
 });
 
 // ================================================================ 界面
 const labelsEl = $('labels');
+// 选中天体：距离工具在等待目标时交给它，否则飞过去
+const choose = (b) => ui.pickTarget(b) || pick(b.id);
 for (const b of bodies) {
   b.label = document.createElement('div');
   b.label.className = 'label' + (b.parent ? ' moon' : '');
   b.label.innerHTML = `<i style="background:${b.def.color}"></i>${nameOf(b)}`;
-  b.label.onclick = () => pick(b.id);
+  b.label.onclick = () => choose(b);
   labelsEl.append(b.label);
+}
+for (const c of constNames) {
+  c.el = document.createElement('div');
+  c.el.className = 'cname';
+  labelsEl.append(c.el);
+}
+const nameConsts = () => constNames.forEach((c) => (c.el.textContent = isEn() ? c.en : c.zh));
+nameConsts();
+onLang(nameConsts);
+function updateConstellations() {
+  const on = settings.constellations;
+  constLines.visible = on;
+  for (const c of constNames) {
+    let show = on;
+    if (show) {
+      const p = tmp.copy(camera.position).addScaledVector(c.dir, 1e4).project(camera);
+      show = p.z < 1 && Math.abs(p.x) < 1.05 && Math.abs(p.y) < 1.05;
+      if (show) c.el.style.transform = `translate(${((p.x * 0.5 + 0.5) * innerWidth).toFixed(1)}px,${((-p.y * 0.5 + 0.5) * innerHeight).toFixed(1)}px) translate(-50%,-50%)`;
+    }
+    if (c.shown !== show) c.el.classList.toggle('on', (c.shown = show));
+  }
+}
+
+// 距离工具：两天体之间的虚线与中点标签；距离按真实位置计算（realKm），不受画面压缩影响
+const distLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new V3(), new V3()]), new THREE.LineDashedMaterial({ color: 0xffd9a0, dashSize: 1, gapSize: 1, transparent: true, opacity: 0.9, depthWrite: false }));
+distLine.frustumCulled = false;
+distLine.visible = false;
+scene.add(distLine);
+const distTag = document.createElement('div');
+distTag.className = 'dtag';
+labelsEl.append(distTag);
+function measure(a, b) {
+  const km = realKm(a, kmA).distanceTo(realKm(b, kmB)), au = km / AU_KM;
+  return { km, au, rows: [[L('距离'), `${au.toFixed(au >= 0.1 ? 3 : 5)} AU`], ['', fmtKm(km)], [L('光行时间'), fmtLight(km / C_KMS)]] };
+}
+function updateDistance() {
+  const pair = ui.distPair();
+  distLine.visible = !!pair;
+  distTag.classList.toggle('on', !!pair);
+  if (!pair) return;
+  const [a, b] = pair, p = distLine.geometry.attributes.position;
+  p.setXYZ(0, a.pos.x, a.pos.y, a.pos.z);
+  p.setXYZ(1, b.pos.x, b.pos.y, b.pos.z);
+  p.needsUpdate = true;
+  distLine.computeLineDistances();
+  const len = a.pos.distanceTo(b.pos);
+  distLine.material.dashSize = len / 70;
+  distLine.material.gapSize = len / 110;
+  const m = tmp.addVectors(a.pos, b.pos).multiplyScalar(0.5).project(camera), { au, km } = measure(a, b);
+  const txt = au >= 0.01 ? `${au.toFixed(au >= 10 ? 1 : 2)} AU` : fmtKm(km);
+  if (distTag.textContent !== txt) distTag.textContent = txt;
+  distTag.style.visibility = m.z < 1 ? '' : 'hidden';
+  distTag.style.transform = `translate(${((m.x * 0.5 + 0.5) * innerWidth).toFixed(1)}px,${((-m.y * 0.5 + 0.5) * innerHeight).toFixed(1)}px) translate(-50%,-50%)`;
 }
 function updateLabels() {
   const w = innerWidth, h = innerHeight, th = Math.tan((camera.fov * DEG) / 2), placed = [];
@@ -1091,7 +1165,7 @@ function renderStats() {
 // ================================================================ 界面与配乐
 const player = new Player(settings);
 const ui = createUI({
-  bodies, sim, RATES, settings, PRESETS, SYSTEM, T_MIN, T_MAX, gpuName, player, liveRows, renderStats, nextPerihelion,
+  bodies, sim, RATES, settings, PRESETS, SYSTEM, T_MIN, T_MAX, gpuName, measure, player, liveRows, renderStats, nextPerihelion,
   KEYS: ['sun', 'mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'moon'],
   focusOn: pick,
   overview: () => { const p = shot('overview', 'overview'); pick('sun', { dir: p.dir, dist: p.dist, overview: true }); },
@@ -1133,6 +1207,8 @@ function loop(now) {
   updateSunFx(dt);
   finalPass.uniforms.uTime.value = now / 1000;
   updateLabels();
+  updateConstellations();
+  updateDistance();
   ui.frame(now, dt);
   player.brightness(sunClose);
   renderer.info.reset();

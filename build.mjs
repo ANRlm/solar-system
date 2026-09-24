@@ -74,6 +74,13 @@ stars.forEach((s, i) => {
   sv.setInt8(i * 6 + 5, Math.round((isNaN(bv) ? 0.6 : Math.max(-0.4, Math.min(2.2, bv))) * 50));
 });
 
+// 星座连线（每段两端点的赤经、赤纬，度）与星座名（中文、IAU 拉丁名、标注位置），来自 d3-celestial
+const segs = [];
+for (const f of json('./node_modules/d3-celestial/data/constellations.lines.json').features)
+  for (const line of f.geometry.coordinates) for (let i = 1; i < line.length; i++) segs.push(...line[i - 1], ...line[i]);
+const names = json('./node_modules/d3-celestial/data/constellations.json').features.map(({ properties: p }) => [p.zh + ({ 'Serpens Caput': '·头', 'Serpens Cauda': '·尾' }[p.name] || ''), p.name, p.display[0], p.display[1]]);
+const constellations = { segs: segs.map((v) => Math.round(v * 100) / 100), names };
+
 // 真实行星贴图（由 tools/fetch-textures.mjs 生成）
 const tex = Object.fromEntries(readdirSync('assets').filter((f) => f.endsWith('.webp')).map((f) => [f.slice(0, -5), readFileSync(`assets/${f}`).toString('base64')]));
 
@@ -84,6 +91,7 @@ const res = await build({
     __MILKY__: JSON.stringify(b64(milky)),
     __STARS__: JSON.stringify(b64(new Uint8Array(sv.buffer))),
     __TEX__: JSON.stringify(tex),
+    __CONST__: JSON.stringify(constellations),
   },
 });
 const js = res.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
