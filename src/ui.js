@@ -129,7 +129,7 @@ export function createUI(app) {
       const a = el.dataset.act;
       if (a === 'orbit') { app.setOrbit(!app.isOrbiting()); el.classList.toggle('on', app.isOrbiting()); }
       else if (a === 'parent') app.focusOn(b.parent.id);
-      else if (a === 'peri') { app.setTime(app.nextPerihelion(b)); toast('已跳到下次过近日点'); }
+      else if (a === 'peri') { app.setTime(app.nextPerihelion(b)); app.focusOn(b.id); toast('已跳到下次过近日点'); }
     }));
   }
   function onFocus(b) {
@@ -147,6 +147,8 @@ export function createUI(app) {
     $('iStats').innerHTML = kv(d.stats);
     $('iLive').innerHTML = kv(app.liveRows(b));
     renderActions(b);
+    // 远离太阳的彗星还没有彗尾：提示可以跳到近日点观看
+    if (d.kind === 'comet' && b.act < 0.05 && !app.isTour()) toast(`${d.name}距太阳 ${b.au.length().toFixed(1)} AU，彗核冻结、尚未形成彗尾——点「跳到下次近日点」即可观看`, undefined, 5000);
     info.classList.remove('swap');
     void info.offsetWidth;
     info.classList.add('swap');
@@ -313,14 +315,14 @@ export function createUI(app) {
 
   // ---------------------------------------------------------------- 提示条
   let toastTimer;
-  function toast(msg, progress) {
+  function toast(msg, progress, ms = 2200) {
     const t = $('toast');
     $('toastMsg').textContent = msg;
     t.classList.toggle('progress', progress !== undefined);
     if (progress !== undefined) $('toastBar').style.transform = `scaleX(${progress})`;
     t.classList.add('show');
     clearTimeout(toastTimer);
-    if (progress === undefined || progress >= 1) toastTimer = setTimeout(() => t.classList.remove('show'), progress >= 1 ? 900 : 2200);
+    if (progress === undefined || progress >= 1) toastTimer = setTimeout(() => t.classList.remove('show'), progress >= 1 ? 900 : ms);
   }
 
   // ---------------------------------------------------------------- 加载与入场

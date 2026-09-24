@@ -273,43 +273,84 @@ function fillPlanetOrbit(b, T) {
   b.orbit.setPoints((i, o) => { toScene(kepler(el.a, el.e, el.I, el.O, el.w, (i / 720) * Math.PI * 2, tmp), o); });
   b.orbitT = T;
 }
-// 彗发（面向相机的光斑）+ 离子尾（笔直背向太阳，蓝）+ 尘埃尾（沿轨道向后弯曲，黄白）
+// 彗发（面向相机的光斑，向阳侧有喷流）+ 离子尾（背向太阳的主尾与张开的射线，蓝）
+// + 尘埃尾（沿轨道向后弯曲的光带，黄白）+ 尘埃粒子（铺在轨道面内、缓慢向外漂移）
+const ION_RAYS = 6, DUST_N = 6000, cometPR = { value: 1 };
+// 离子尾：主尾 + 若干射线合并为一个网格（aK = 0 为主尾，1..N 为射线），一次绘制
+function ribbons(K, seg = 64) {
+  const p = new THREE.PlaneGeometry(1, 1, 1, seg), n = p.attributes.position.count, g = new THREE.BufferGeometry();
+  const pos = new Float32Array(n * 3 * K), uv = new Float32Array(n * 2 * K), k = new Float32Array(n * K), idx = [];
+  for (let j = 0; j < K; j++) {
+    pos.set(p.attributes.position.array, j * n * 3);
+    uv.set(p.attributes.uv.array, j * n * 2);
+    k.fill(j, j * n, (j + 1) * n);
+    for (const i of p.index.array) idx.push(i + j * n);
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setAttribute('aK', new THREE.BufferAttribute(k, 1));
+  g.setIndex(idx);
+  return g;
+}
+const dustGeo = new THREE.BufferGeometry();
+dustGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DUST_N * 3), 3));
+dustGeo.setAttribute('aSeed', new THREE.BufferAttribute(Float32Array.from({ length: DUST_N * 4 }, Math.random), 4));
 for (const b of bodies) if (b.def.kind === 'comet') {
   const add = (m) => { m.frustumCulled = false; return m; };
   const fx = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending };
-  b.coma = add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ ...fx, vertexShader: S.CORONA_VERT, fragmentShader: S.COMA_FRAG, uniforms: { uSize: { value: 1 }, uLift: { value: b.r * 1.5 }, uI: { value: 0 } } })));
+  b.coma = add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+    ...fx, vertexShader: S.CORONA_VERT, fragmentShader: S.COMA_FRAG,
+    uniforms: { uSize: { value: 1 }, uLift: { value: b.r * 1.5 }, uI: { value: 0 }, uTime: { value: 0 }, uSunward: { value: new V3() } },
+  })));
   b.group.add(b.coma);
+  const shared = { uP0: { value: b.pos }, uAway: { value: new V3() }, uBack: { value: new V3() }, uVel: { value: new V3() }, uTime: { value: 0 } };
   b.tails = [[0.3, 0.55, 1], [1, 0.88, 0.7]].map((c, k) => {
-    const m = add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 1, 64), new THREE.ShaderMaterial({
-      ...fx, side: THREE.DoubleSide, vertexShader: S.TAIL_VERT, fragmentShader: S.TAIL_FRAG,
-      uniforms: {
-        uP0: { value: b.pos }, uAway: { value: new V3() }, uBack: { value: new V3() }, uLen: { value: 1 }, uCurve: { value: k ? 0.35 : 0 },
-        uW0: { value: k ? 0.012 : 0.006 }, uW1: { value: k ? 0.16 : 0.05 }, uColor: { value: new THREE.Color(...c) }, uI: { value: 0 }, uTime: { value: 0 }, uStreak: { value: k ? 0.3 : 1 },
-      },
+    const m = add(new THREE.Mesh(k ? new THREE.PlaneGeometry(1, 1, 1, 64) : ribbons(1 + ION_RAYS), new THREE.ShaderMaterial({
+      ...fx, side: THREE.DoubleSide, vertexShader: S.TAIL_VERT, fragmentShader: S.TAIL_FRAG, defines: k ? {} : { ION: 1 },
+      uniforms: { ...shared, uLen: { value: 1 }, uCurve: { value: k ? 0.35 : 0 }, uW0: { value: k ? 0.012 : 0.006 }, uW1: { value: k ? 0.16 : 0.05 }, uColor: { value: new THREE.Color(...c) }, uI: { value: 0 } },
     })));
     scene.add(m);
     return m;
   });
+  const du = b.tails[1].material.uniforms;
+  b.dust = add(new THREE.Points(dustGeo, new THREE.ShaderMaterial({
+    ...fx, vertexShader: S.DUST_VERT, fragmentShader: S.DUST_FRAG,
+    uniforms: { ...shared, uLen: du.uLen, uCurve: du.uCurve, uW1: du.uW1, uColor: du.uColor, uI: { value: 0 }, uPR: cometPR, uRes: { value: orbitRes } },
+  })));
+  scene.add(b.dust);
 }
-// 活跃度随日距急剧下降：约 3 AU 以外几乎没有彗尾
+// 活跃度：随日距急剧下降（约 3 AU 以外几乎没有彗尾），并随彗核大小增强（海尔-波普的彗核直径约 60 km）
+function cometActivity(b) {
+  b.act = Math.min(5, Math.pow(1.5 / b.au.length(), 3) * Math.sqrt(b.def.km / 3));
+  b.tailLen = 14 * Math.pow(b.act, 0.6);
+}
+// 活跃彗星的镜头：从侧面看整条彗尾；取这一侧使彗尾在画面中朝左延伸（右侧是信息卡）
+function cometFrame(b) {
+  const away = b.pos.clone().normalize(), side = new V3().crossVectors(UP, away).normalize();
+  return { dir: side.addScaledVector(UP, 0.35).addScaledVector(away, -0.3).normalize(), dist: Math.max(b.r * 300, b.tailLen * 1.1) };
+}
 function updateComets(time) {
   for (const b of bodies) if (b.def.kind === 'comet') {
-    // 活跃度随日距急剧下降，并随彗核大小增强（海尔-波普的彗核直径约 60 km）
-    const act = Math.min(5, Math.pow(1.5 / b.au.length(), 3) * Math.sqrt(b.def.km / 3)), L = 14 * Math.pow(act, 0.6);
-    b.act = act;
-    b.tailLen = L;
+    const act = b.act, L = b.tailLen, on = act > 0.01;
     const [ion, dust] = b.tails.map((m) => m.material.uniforms);
     ion.uAway.value.copy(b.pos).normalize();
-    dust.uAway.value.copy(ion.uAway.value);
-    dust.uBack.value.copy(b.vel).negate().addScaledVector(ion.uAway.value, b.vel.dot(ion.uAway.value)).normalize();
+    ion.uBack.value.copy(b.vel).negate().addScaledVector(ion.uAway.value, b.vel.dot(ion.uAway.value)).normalize();
+    ion.uVel.value.copy(b.vel);
+    ion.uTime.value = time;
     ion.uLen.value = L;
     dust.uLen.value = L * 0.8;
-    ion.uI.value = 0.35 * act;
-    dust.uI.value = 0.45 * act;
-    ion.uTime.value = dust.uTime.value = time;
-    b.tails.forEach((m) => (m.visible = act > 0.01));
-    b.coma.material.uniforms.uSize.value = 0.15 + 0.8 * Math.sqrt(act);
-    b.coma.material.uniforms.uI.value = 0.06 + 0.5 * act;
+    // 亮度随活跃度亚线性增长：中等活跃的彗星看得清，近日点附近也不会过曝成一片白
+    const I = Math.sqrt(act);
+    ion.uI.value = 0.4 * I;
+    dust.uI.value = 0.5 * I;
+    b.dust.material.uniforms.uI.value = 0.9 * I;
+    b.tails.forEach((m) => (m.visible = on));
+    b.dust.visible = on;
+    const cu = b.coma.material.uniforms;
+    cu.uSize.value = 0.15 + 0.8 * I;
+    cu.uI.value = 0.08 + 0.4 * I;
+    cu.uTime.value = time;
+    cu.uSunward.value.copy(ion.uAway.value).negate();
   }
 }
 // 小天体（矮行星、彗星）轨道：按偏近点角均匀采样，高偏心率轨道在近日点附近才不会折线化
@@ -573,6 +614,7 @@ function resize() {
   finalPass.uniforms.uRes.value.set(innerWidth * pr, innerHeight * pr);
   belt.material.uniforms.uPx.value = kuiper.material.uniforms.uPx.value = (2 * Math.tan((camera.fov * DEG) / 2)) / (innerHeight * pr);
   if (stars) stars.material.uniforms.uPR.value = pr;
+  cometPR.value = pr;
   orbitRes.set(innerWidth * pr, innerHeight * pr);
   orbitWidth.value = 1.1 * Math.max(1, pr);
 }
@@ -633,6 +675,7 @@ function updateBodies(d, step = 0, dt = 0, jump = true) {
       b.a = el.a;
       // 速度方向（数值差分），用于尘埃尾的弯曲
       b.vel = (b.vel || new V3()).subVectors(kepler(el.a, el.e, el.I, el.O, el.w, M + el.n * 0.5, tmp), b.au).normalize();
+      if (b.def.kind === 'comet') cometActivity(b);
       if (b.orbitT === undefined) fillKepOrbit(b);
     }
   }
@@ -771,6 +814,7 @@ const nav = { focus: null, flight: null, tour: null, overview: false };
 const system = { id: 'system', def: SYSTEM };
 function focusOn(id, opt = {}) {
   const b = byId[id];
+  if (b.def.kind === 'comet' && b.act > 0.05 && !opt.dir && !opt.dist) opt = { ...cometFrame(b), ...opt };
   // 竖屏时水平视角很窄，按宽高比拉远，保证天体完整入镜
   const dist = (opt.dist || (b === sun ? 52 : b.r * (b.def.view || 4.4))) * Math.max(1, 0.95 / camera.aspect);
   const toSun = b === sun ? new V3(0.35, 0.3, 1).normalize() : tmp.copy(b.pos).negate().normalize().clone();
@@ -877,10 +921,7 @@ function shot(id, kind) {
       const out = b.pos.clone().sub(b.parent.pos).normalize();
       return { b, dir: out.applyAxisAngle(UP, 26 * DEG).addScaledVector(UP, 0.12).normalize(), dist: b.r * 5.5, motion: { orbit: 1.1 } };
     }
-    case 'comet': { // 从侧面看彗尾
-      const away = b.pos.clone().normalize(), side = new V3().crossVectors(away, UP).normalize();
-      return { b, dir: side.addScaledVector(UP, 0.35).addScaledVector(away, -0.3).normalize(), dist: Math.max(b.r * 300, b.tailLen * 0.95), motion: { orbit: 1 } };
-    }
+    case 'comet': return { b, ...cometFrame(b), motion: { orbit: 1 } };
     case 'overview': return { b: sun, dir: new V3(-0.25, 0.55, 1).normalize(), dist: 760, motion: { orbit: 1.2 } };
     default: return { b, dir: around(55, 0.3), dist: base, motion: { orbit: 3 } };
   }

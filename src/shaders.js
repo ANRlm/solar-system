@@ -635,30 +635,87 @@ void main(){
 
 // ---------------------------------------------------------------- 彗星：彗发（面向相机的光斑）与彗尾（沿曲线展开、面向相机的带）
 export const COMA_FRAG = /* glsl */ `${LOGF}
-uniform float uI;varying vec2 vUv;
+${NOISE}
+uniform float uI,uTime;uniform vec3 uSunward;varying vec2 vUv;varying vec3 vOff;
 void main(){
   #include <logdepthbuf_fragment>
   float q=length(vUv);
   vec3 c=mix(vec3(.5,1.,.78),vec3(1.),exp(-q*q*60.));
-  gl_FragColor=vec4(c*(exp(-q*q*9.)*.7+exp(-q*3.5)*.3+exp(-q*q*400.)*2.)*uI*(1.-smoothstep(.6,1.,q)),1.);
+  float base=exp(-q*q*9.)*.7+exp(-q*3.5)*.3+exp(-q*q*400.)*2.;
+  // 向阳侧的喷流：彗核向阳面冰升华最强，自转把喷流拉成扇形亮纹；vOff 在光斑平面内，点积即向阳方向的投影
+  float fan=max(dot(normalize(vOff+vec3(1e-6)),uSunward),0.);
+  float jets=fan*fan*(.45+.55*snoise(vec3(atan(vUv.y,vUv.x)*4.,q*3.-uTime*.15,uTime*.05)))*exp(-q*5.)*.9;
+  gl_FragColor=vec4((c*base+vec3(.92,1.,.96)*jets)*uI*(1.-smoothstep(.6,1.,q)),1.);
 }`;
+// 彗尾：沿曲线展开、面向相机的带。uv.y = t 从彗头到尾端，uv.x 为横向
+// 离子尾（ION）：aK = 0 为主尾；aK ≥ 1 为射线——从彗头以不同方位角张开，随后折向主轴并行流向下游，缓慢摆动
+// 尘埃尾：沿轨道向后弯曲；vLead 为朝运动方向一侧的横向坐标（前缘更亮、更锐利）
 export const TAIL_VERT = /* glsl */ `${LOGV}
-uniform vec3 uP0,uAway,uBack;uniform float uLen,uCurve,uW0,uW1;varying vec2 vUv;
+attribute float aK;
+uniform vec3 uP0,uAway,uBack,uVel;uniform float uLen,uCurve,uW0,uW1,uTime;varying vec2 vUv;varying float vK,vLead;
 void main(){
-  vUv=uv;float t=uv.y,s=uv.x*2.-1.;
+  vUv=uv;vK=aK;float t=uv.y,s=uv.x*2.-1.;
   vec3 p=uP0+(uAway*t+uBack*t*t*uCurve)*uLen;
   vec3 tg=normalize(uAway+uBack*2.*t*uCurve);
+  float w=mix(uW0,uW1,t);
+  #ifdef ION
+  if(aK>0.){
+    vec3 e1=normalize(cross(uAway,abs(uAway.y)<.9?vec3(0.,1.,0.):vec3(1.,0.,0.))),e2=cross(uAway,e1);
+    float h=fract(sin(aK*12.9898)*43758.5453),a=aK*2.39996+uTime*.03*(h-.5);
+    vec3 d=e1*cos(a)+e2*sin(a);
+    p+=(d*(.04+.06*h)*t/(1.+4.*t)+cross(uAway,d)*sin(t*9.-uTime*(.5+.4*h)+h*6.28)*.012*t)*uLen;
+    w*=.22+.1*h;
+  }
+  #endif
   vec3 sd=cross(tg,cameraPosition-p);
-  p+=(length(sd)>1e-9?normalize(sd):vec3(0.))*s*mix(uW0,uW1,t)*uLen;
+  sd=length(sd)>1e-9?normalize(sd):vec3(0.);
+  vLead=s*(dot(sd,uVel)<0.?-1.:1.);
+  p+=sd*s*w*uLen;
   gl_Position=projectionMatrix*viewMatrix*vec4(p,1.);
   #include <logdepthbuf_vertex>
 }`;
 export const TAIL_FRAG = /* glsl */ `${LOGF}
 ${NOISE}
-uniform vec3 uColor;uniform float uI,uTime,uStreak;varying vec2 vUv;
+uniform vec3 uColor;uniform float uI,uTime;varying vec2 vUv;varying float vK,vLead;
 void main(){
   #include <logdepthbuf_fragment>
   float t=vUv.y,s=vUv.x*2.-1.;
-  float st=mix(1.,.5+pow(abs(snoise(vec3(s*7.,t*4.-uTime*.12,uTime*.03))),.7),uStreak);
-  gl_FragColor=vec4(uColor*uI*exp(-s*s*3.5)*pow(max(1.-t,0.),1.5)*smoothstep(0.,.05,t)*st,1.);
+  float fade=pow(max(1.-t,0.),1.5)*smoothstep(0.,.05,t);
+  #ifdef ION
+  // 等离子体团块沿尾向外流动；射线更细、亮度各异
+  bool ray=vK>.5;
+  float flow=.5+.5*snoise(vec3(s*(ray?1.5:6.)+vK*5.3,t*5.-uTime*.45,uTime*.04+vK));
+  float prof=ray?exp(-s*s*4.)*(.3+.35*fract(sin(vK*78.233)*43758.5453)):exp(-s*s*3.5);
+  vec3 c=uColor*prof*mix(.35,1.,flow);
+  #else
+  // 前缘（朝运动方向）锐利、后缘弥散；斜向的细条纹对应不同时刻抛出的尘埃（striae）
+  float x=vLead-.2,prof=exp(-sq(x/(x>0.?.3:.8)));
+  float st=.5+pow(abs(snoise(vec3(s*7.,t*4.-uTime*.12,uTime*.03))),.7);
+  float stria=.85+.15*sin(t*28.+vLead*5.+snoise(vec3(t*2.,0.,uTime*.01))*3.);
+  vec3 c=uColor*prof*mix(1.,st,.3)*stria;
+  #endif
+  gl_FragColor=vec4(c*uI*fade,1.);
+}`;
+// 尘埃粒子：沿尘埃尾曲线分布，横向铺在轨道面内（uBack 方向宽、法向薄），各自以不同速度缓慢向外漂移
+export const DUST_VERT = /* glsl */ `${LOGV}
+attribute vec4 aSeed;
+uniform vec3 uP0,uAway,uBack,uColor;uniform float uLen,uCurve,uW1,uTime,uI,uPR;uniform vec2 uRes;varying vec3 vCol;
+void main(){
+  float t=fract(aSeed.x+uTime*(.004+.012*aSeed.y));
+  float g=aSeed.z*2.-1.;g*=abs(g);
+  vec3 n=cross(uAway,uBack);
+  vec3 p=uP0+(uAway*t+uBack*t*t*uCurve)*uLen+(uBack*g*mix(.01,uW1,t)+n*(aSeed.w-.5)*mix(.006,uW1*.25,t))*uLen;
+  gl_Position=projectionMatrix*viewMatrix*vec4(p,1.);
+  vCol=uColor*uI*pow(1.-t,1.3)*smoothstep(0.,.03,t)*(.3+.7*fract(aSeed.y*7.31));
+  // 彗尾在屏幕上很短时，数千个定大小的点会叠在几个像素里、加法混合后亮成一块方斑：按彗尾的屏幕长度淡出，交给光带表现
+  vCol*=smoothstep(150.,600.,uLen*projectionMatrix[1][1]*uRes.y*.5/gl_Position.w);
+  gl_PointSize=uPR*(1.+aSeed.w);
+  #include <logdepthbuf_vertex>
+}`;
+export const DUST_FRAG = /* glsl */ `${LOGF}
+varying vec3 vCol;
+void main(){
+  #include <logdepthbuf_fragment>
+  float d=length(gl_PointCoord-.5)*2.;
+  gl_FragColor=vec4(vCol*max(1.-d*d,0.),1.);
 }`;
