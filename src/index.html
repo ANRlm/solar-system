@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>太阳系 · 实时模拟</title>
+<style>
+:root{
+  --fg:#eef2f7;--fg2:#b8c2ce;--mut:#7c8898;--acc:#ffc46e;--acc2:#8fd3ff;
+  --glass:rgba(11,15,23,.52);--glass2:rgba(16,21,31,.78);--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.14);
+  --blur:blur(22px) saturate(160%);--r:16px;--ease:cubic-bezier(.2,.8,.2,1);
+  --top:64px;--dock-h:120px;--safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;overflow:hidden;color:var(--fg);font:13px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none}
+b,em,.num{font-style:normal;font-variant-numeric:tabular-nums}
+button,select,input{font:inherit;color:inherit}
+button{background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+:focus{outline:none}
+:focus-visible{outline:2px solid rgba(143,211,255,.7);outline-offset:2px;border-radius:8px}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#c:active{cursor:grabbing}
+.glass{background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--line);border-radius:var(--r);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 18px 50px rgba(0,0,0,.4)}
+.fade{transition:opacity .6s var(--ease),transform .6s var(--ease)}
+#ui{position:fixed;inset:0;pointer-events:none}
+#ui .hit{pointer-events:auto}
+body.hide-ui #ui,body.hide-ui #labels{opacity:0;pointer-events:none}
+body.hide-ui #ui .hit{pointer-events:none}
+body.idle .autohide,body.idle #labels{opacity:0;pointer-events:none}
+body.pre #ui,body.pre #labels{opacity:0;pointer-events:none}
+#ui,#labels{transition:opacity 1.2s ease}
+
+/* ---------- 图标按钮 ---------- */
+.ic{width:36px;height:36px;display:grid;place-items:center;border-radius:11px;color:var(--fg2);transition:background .2s,color .2s}
+.ic:hover{background:rgba(255,255,255,.08);color:#fff}
+.ic.on{color:var(--acc)}
+.ic svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ic svg.solid{fill:currentColor;stroke:none}
+.ic.sm{width:30px;height:30px}.ic.sm svg{width:16px;height:16px}
+.pill{display:flex;align-items:center;gap:10px;height:36px;padding:0 14px;border-radius:12px}
+.chip{display:inline-flex;align-items:center;height:20px;padding:0 9px;border-radius:10px;font-size:11px;color:var(--acc);border:1px solid rgba(255,196,110,.3);white-space:nowrap}
+.chip.ghost{color:var(--fg2);border-color:var(--line2)}
+.txt{height:32px;padding:0 12px;border-radius:10px;color:var(--fg2);white-space:nowrap;transition:background .2s,color .2s}
+.txt:hover{background:rgba(255,255,255,.08);color:#fff}
+
+/* ---------- 天体色球（CSS 渐变模拟受光球体） ---------- */
+.sw{--c:#888;position:relative;display:inline-block;flex:none;width:14px;height:14px;border-radius:50%;
+  background:radial-gradient(circle at 34% 30%,color-mix(in srgb,var(--c) 45%,#fff) 0,var(--c) 45%,color-mix(in srgb,var(--c) 30%,#000) 100%)}
+.sw.lg{width:42px;height:42px}
+.sw[data-k=star]{background:radial-gradient(circle,#fff8e6 0,#ffd27a 40%,#ff9a3c 75%);box-shadow:0 0 10px rgba(255,190,90,.8)}
+.sw.lg[data-k=star]{box-shadow:0 0 26px rgba(255,190,90,.7)}
+.sw[data-ring]::after{content:"";position:absolute;left:-38%;right:-38%;top:38%;bottom:38%;border:1.5px solid color-mix(in srgb,var(--c) 75%,#fff);border-radius:50%;transform:rotate(-20deg);opacity:.85}
+.sw.lg[data-ring]::after{border-width:3px}
+.sw[data-k=comet]{width:8px;height:8px;margin:3px;background:#e9f8ff;box-shadow:0 0 6px var(--c)}
+.sw[data-k=comet]::after{content:"";position:absolute;left:55%;top:20%;width:190%;height:60%;background:linear-gradient(90deg,var(--c),transparent);border-radius:0 50% 50% 0;opacity:.8}
+.sw.lg[data-k=comet]{width:22px;height:22px;margin:10px 20px 10px 0}
+
+/* ---------- 顶栏 ---------- */
+#top{position:absolute;inset:0 0 auto 0;height:calc(var(--top) + 40px);padding:14px 18px 0 22px;display:flex;align-items:flex-start;gap:16px;background:linear-gradient(to bottom,rgba(0,0,0,.6),rgba(0,0,0,.25) 55%,transparent);transition:opacity .6s}
+.brand{padding-top:4px;pointer-events:none}
+.brand b{display:block;font-size:19px;font-weight:200;letter-spacing:.44em;line-height:1.2}
+.brand span{font-size:9px;letter-spacing:.36em;color:var(--mut)}
+#timeSlotTop{position:absolute;left:50%;top:14px;transform:translateX(-50%)}
+#timebar{display:flex;align-items:center;gap:2px;height:40px;padding:0 8px 0 6px;border-radius:14px}
+#clock{display:flex;align-items:center;gap:10px;height:30px;padding:0 10px;border-radius:9px;transition:background .2s}
+#clock:hover{background:rgba(255,255,255,.07)}
+#date{font-size:14px;letter-spacing:.06em}
+#time{font-size:13px;color:var(--fg2);letter-spacing:.06em}
+#clock .dot{width:3px;height:3px;border-radius:50%;background:var(--mut)}
+#timeSlotDock:empty{display:none}
+#timeSlotDock{border-top:1px solid var(--line);padding-top:4px;display:flex;justify-content:center}
+#timeSlotDock #timebar{background:none;border:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;height:38px}
+.tools{margin-left:auto;display:flex;align-items:center;gap:4px}
+#fpsPill{gap:8px;padding:0 10px 0 12px;margin-right:6px}
+#fps{font-size:17px;font-weight:300;min-width:24px;text-align:right;transition:color .3s}
+#fps.good{color:#8ff0b8}#fps.ok{color:#ffd27a}#fps.bad{color:#ff7d6e}
+#fpsPill small{font-size:9px;letter-spacing:.18em;color:var(--mut)}
+#graph{width:52px;height:18px}
+
+/* ---------- 弹出层 ---------- */
+.pop{position:absolute;top:calc(var(--top) - 6px);padding:14px 16px;opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .22s var(--ease),transform .22s var(--ease);background:var(--glass2)}
+.pop.open{opacity:1;transform:none;pointer-events:auto}
+#perfPop{right:170px;width:236px}
+#datePop{left:50%;margin-left:-160px;width:320px}
+.kvl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12px}
+.kvl span{color:var(--mut)}
+.kvl b{text-align:right;font-weight:400}
+#gpu{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:11px;color:var(--mut)}
+.pop h4,.group h4,.i-sec{font-size:10px;font-weight:500;letter-spacing:.22em;color:var(--mut);margin-bottom:10px}
+#dateIn{width:100%;height:36px;padding:0 10px;background:rgba(0,0,0,.35);border:1px solid var(--line2);border-radius:10px;color-scheme:dark;font-variant-numeric:tabular-nums}
+.date-row{display:flex;gap:6px;margin-top:10px}
+.date-row .txt{flex:1;padding:0 4px;background:rgba(255,255,255,.06)}
+.events{display:grid;gap:2px}
+.events button{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;text-align:left;color:var(--fg2);transition:background .2s,color .2s}
+.events button:hover{background:rgba(255,255,255,.07);color:#fff}
+.events small{color:var(--mut);font-size:11px;white-space:nowrap}
+
+/* ---------- 信息卡 ---------- */
+#info{position:absolute;right:18px;top:calc(var(--top) + 10px);width:320px;max-height:calc(100% - var(--top) - var(--dock-h) - 44px);display:flex;flex-direction:column;overflow:hidden;transition:opacity .45s var(--ease),transform .45s var(--ease)}
+body.drawer-open #info{opacity:0;transform:translateX(30px);pointer-events:none}
+#info.swap .i-body,#info.swap .i-head{animation:swap .7s var(--ease)}
+@keyframes swap{from{opacity:0;transform:translateY(8px)}}
+.i-head{display:flex;align-items:center;gap:14px;padding:16px 12px 14px 18px;cursor:pointer}
+.i-title{flex:1;min-width:0}
+#iName{font-size:21px;font-weight:300;letter-spacing:.16em;line-height:1.25}
+#iEn{font-size:9.5px;letter-spacing:.3em;color:var(--mut);text-transform:uppercase}
+#iCollapse svg{transition:transform .35s var(--ease)}
+#info.collapsed #iCollapse svg{transform:rotate(180deg)}
+.i-body{overflow:auto;padding:0 18px 18px;scrollbar-width:none;transition:max-height .45s var(--ease),opacity .3s}
+.i-body::-webkit-scrollbar{display:none}
+#info.collapsed .i-body{max-height:0;opacity:0;padding-bottom:0}
+.i-tags{display:flex;flex-wrap:wrap;gap:6px}
+#iDesc{margin:12px 0 16px;color:var(--fg2);line-height:1.75;font-size:12.5px}
+.i-sec{display:flex;align-items:center;gap:8px;margin:16px 0 10px}
+.i-sec::after{content:"";flex:1;height:1px;background:var(--line)}
+.live-dot{width:6px;height:6px;border-radius:50%;background:#8ff0b8;box-shadow:0 0 8px #8ff0b8;animation:pulse 2s infinite}
+@keyframes pulse{50%{opacity:.35}}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+.kv span{display:block;font-size:10.5px;color:var(--mut);letter-spacing:.04em}
+.kv b{display:block;font-size:13px;font-weight:500;margin-top:1px}
+.i-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.btn{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:10px;background:rgba(255,255,255,.07);color:var(--fg2);font-size:12px;transition:background .2s,color .2s}
+.btn:hover{background:rgba(255,255,255,.12);color:#fff}
+.btn.on{background:rgba(255,196,110,.16);color:var(--acc)}
+.btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- 底部悬浮坞 ---------- */
+#dock{position:absolute;left:50%;bottom:calc(18px + var(--safe-b));transform:translateX(-50%);max-width:calc(100% - 28px);padding:6px;display:flex;flex-direction:column;gap:4px;transition:opacity .6s}
+#moons{display:flex;justify-content:center;gap:2px;max-height:0;overflow:hidden;opacity:0;transition:max-height .4s var(--ease),opacity .3s,padding .4s}
+#moons.show{max-height:44px;opacity:1;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.dock-row{display:flex;align-items:center;justify-content:center;gap:4px}
+#nav{display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none;min-width:0}
+#nav::-webkit-scrollbar{display:none}
+.nb{display:flex;align-items:center;gap:8px;height:38px;padding:0 12px;border-radius:11px;color:var(--fg2);letter-spacing:.06em;white-space:nowrap;transition:background .25s,color .25s}
+.nb:hover{background:rgba(255,255,255,.07);color:#fff}
+.nb.active{background:rgba(255,255,255,.11);color:#fff}
+.nb.active .sw:not([data-k=comet]){box-shadow:0 0 0 2px rgba(255,255,255,.16),0 0 12px var(--c)}
+.nb.mini{height:32px;font-size:12px;padding:0 10px}
+.nb[hidden]{display:none}
+.vdiv{width:1px;height:24px;background:var(--line2);margin:0 4px;flex:none}
+.nb.grp svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2;opacity:.6}
+.tourbtn{gap:7px;padding:0 13px 0 10px}
+.tourbtn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tourbtn.on{background:rgba(255,196,110,.16);color:var(--acc)}
+#groupPop{top:auto;width:300px;max-height:60vh;overflow:auto;padding:10px}
+#groupPop h4{margin:4px 6px 8px}
+.gi{display:flex;align-items:center;gap:12px;width:100%;padding:9px 10px;border-radius:10px;text-align:left;transition:background .2s}
+.gi:hover{background:rgba(255,255,255,.07)}
+.gi.active{background:rgba(255,255,255,.11)}
+.gi .sw{margin:0 6px 0 2px}
+.gi b{display:block;font-weight:400;font-size:13px}
+.gi small{display:block;font-size:11px;color:var(--mut)}
+#caption{position:absolute;left:30px;bottom:calc(var(--dock-h) + 46px + var(--safe-b));max-width:min(480px,calc(100% - 60px));opacity:0;transform:translateY(14px);transition:opacity .9s var(--ease),transform .9s var(--ease);pointer-events:none}
+#caption.show{opacity:1;transform:none}
+#caption::before{content:"";position:absolute;left:-90px;right:-120px;top:-70px;bottom:-60px;z-index:-1;background:radial-gradient(closest-side,rgba(0,0,0,.55),rgba(0,0,0,.28) 55%,transparent);pointer-events:none}
+.c-kick{font-size:10px;letter-spacing:.32em;color:var(--acc);margin-bottom:10px}
+.c-name{font-size:36px;font-weight:200;letter-spacing:.22em;line-height:1.15;text-shadow:0 2px 24px rgba(0,0,0,.8)}
+.c-en{margin-top:6px;font-size:10px;letter-spacing:.44em;color:var(--fg2);text-transform:uppercase}
+.c-fact{margin-top:14px;font-size:14px;line-height:1.8;color:#e2e8ef;text-shadow:0 1px 14px rgba(0,0,0,.9)}
+.c-bar{margin-top:16px;width:220px;height:2px;background:rgba(255,255,255,.14);border-radius:2px;overflow:hidden}
+.c-bar i{display:block;height:100%;background:linear-gradient(90deg,#ffb35a,#ffe0a0);transform-origin:left;transform:scaleX(0)}
+.c-ctl{margin-top:12px;display:flex;align-items:center;gap:2px;pointer-events:auto}
+#speed{width:110px;margin:0 8px 0 6px}
+#speedLbl{min-width:70px;font-size:12px;color:var(--fg2);text-align:center}
+#speedLbl.paused{color:var(--acc)}
+#bPlay .i-play{display:none}#bPlay.paused .i-play{display:block}#bPlay.paused .i-pause{display:none}
+input[type=range]{-webkit-appearance:none;appearance:none;height:3px;border-radius:3px;background:linear-gradient(90deg,var(--acc) var(--p,50%),rgba(255,255,255,.16) var(--p,50%));outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 0 0 4px rgba(255,196,110,.25),0 2px 6px rgba(0,0,0,.4)}
+input[type=range]::-moz-range-thumb{width:15px;height:15px;border:0;border-radius:50%;background:#fff}
+
+/* ---------- 设置抽屉 ---------- */
+#drawer{position:absolute;top:12px;right:12px;bottom:12px;width:372px;display:flex;flex-direction:column;background:var(--glass2);transform:translateX(calc(100% + 30px));transition:transform .5s var(--ease)}
+#drawer.open{transform:none}
+.d-head{display:flex;align-items:center;justify-content:space-between;padding:18px 14px 12px 22px}
+.d-head h3{font-size:17px;font-weight:300;letter-spacing:.24em}
+.tabs{display:flex;gap:4px;margin:0 16px;padding:3px;background:rgba(0,0,0,.3);border-radius:12px}
+.tabs button{flex:1;height:32px;border-radius:9px;color:var(--fg2);transition:background .2s,color .2s}
+.tabs button.on{background:rgba(255,255,255,.11);color:#fff}
+.pane{display:none;flex:1;overflow:auto;padding:18px 22px 24px;scrollbar-width:thin}
+.pane.on{display:block;animation:swap .45s var(--ease)}
+.group{margin-bottom:22px}
+.presets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.presets button{padding:11px 12px;border-radius:12px;text-align:left;background:rgba(255,255,255,.05);border:1px solid transparent;transition:background .2s,border-color .2s}
+.presets button:hover{background:rgba(255,255,255,.09)}
+.presets button.on{border-color:rgba(255,196,110,.55);background:rgba(255,196,110,.09)}
+.presets b{display:block;font-size:14px;font-weight:500}
+.presets small{display:block;margin-top:2px;font-size:10.5px;color:var(--mut);line-height:1.5}
+.presets button.on b{color:var(--acc)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:46px;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row>span{color:var(--fg2)}
+.row small{display:block;font-size:10.5px;color:var(--mut)}
+.row .ctl{display:flex;align-items:center;gap:10px}
+.row .ctl input[type=range]{width:120px}
+.row .ctl em{width:40px;text-align:right;font-size:12px;color:var(--mut)}
+select{height:32px;min-width:128px;padding:0 30px 0 12px;background:rgba(0,0,0,.35) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a0abb8' fill='none' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 11px center;border:1px solid var(--line2);border-radius:10px;appearance:none;-webkit-appearance:none;cursor:pointer}
+.sw-t{position:relative;width:38px;height:22px;flex:none;cursor:pointer}
+.sw-t input{position:absolute;opacity:0;inset:0;cursor:pointer}
+.sw-t i{position:absolute;inset:0;border-radius:11px;background:rgba(255,255,255,.14);transition:background .25s;pointer-events:none}
+.sw-t i::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.4);transition:transform .25s var(--ease)}
+.sw-t input:checked+i{background:#f0a94a}
+.sw-t input:checked+i::after{transform:translateX(16px)}
+.sw-t input:focus-visible+i{outline:2px solid rgba(143,211,255,.7);outline-offset:2px}
+.about p{color:var(--fg2);line-height:1.8;font-size:12px;margin-bottom:10px}
+.about a{color:var(--acc2);text-decoration:none}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:9px 14px;align-items:center;font-size:12px;color:var(--fg2)}
+kbd{display:inline-block;min-width:24px;height:22px;padding:0 6px;border-radius:6px;background:rgba(255,255,255,.08);border:1px solid var(--line2);border-bottom-width:2px;font:11px/20px ui-monospace,SFMono-Regular,Menlo,monospace;text-align:center;color:#fff;margin-right:3px}
+
+/* ---------- 提示 / 帮助 ---------- */
+#toast{position:absolute;left:50%;top:calc(var(--top) + 8px);transform:translate(-50%,-8px);min-width:220px;padding:10px 16px 12px;opacity:0;pointer-events:none;transition:opacity .3s,transform .3s var(--ease);background:var(--glass2);text-align:center;font-size:12px;color:var(--fg2)}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#toast .bar{height:2px;margin-top:8px;border-radius:2px;background:rgba(255,255,255,.1);overflow:hidden}
+#toast .bar i{display:block;height:100%;background:linear-gradient(90deg,#ff9a3c,#ffe0a0);transform-origin:left;transform:scaleX(0);transition:transform .2s}
+#toast:not(.progress) .bar{display:none}
+#help{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .3s;z-index:5}
+#help.open{opacity:1;pointer-events:auto}
+.help-card{width:min(600px,calc(100% - 32px));padding:24px 26px 26px;background:var(--glass2)}
+.help-card header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.help-card h3{font-size:17px;font-weight:300;letter-spacing:.24em}
+.help-card .keys{grid-template-columns:auto 1fr auto 1fr}
+
+/* ---------- 标签 ---------- */
+#labels{position:fixed;inset:0;pointer-events:none;transition:opacity .6s}
+.label{position:absolute;left:0;top:0;display:flex;align-items:center;gap:6px;padding:2px 9px 2px 7px;border-radius:12px;font-size:11px;letter-spacing:.12em;color:rgba(236,241,247,.88);text-shadow:0 1px 3px #000,0 0 8px rgba(0,0,0,.6);white-space:nowrap;opacity:0;transition:opacity .35s,background .2s;cursor:pointer;will-change:transform}
+.label i{width:5px;height:5px;border-radius:50%}
+.label.moon{font-size:10px;color:rgba(210,217,227,.72)}
+.label.on{opacity:1;pointer-events:auto}
+.label:hover{background:rgba(255,255,255,.1)}
+
+/* ---------- 加载 / 入场 ---------- */
+#loader{position:fixed;inset:0;display:grid;place-items:center;background:radial-gradient(ellipse at center,rgba(18,22,32,.7),#000 72%);z-index:10;transition:opacity 1.6s ease,visibility 1.6s,background 1.6s}
+
+#loader.done{opacity:0;visibility:hidden}
+.ld{text-align:center;padding:0 24px}
+.ld-orb{width:78px;height:78px;margin:0 auto 28px;border-radius:50%;background:radial-gradient(circle,#fff6dc 0,#ffc86a 30%,#ff8a2a 55%,rgba(255,120,40,0) 72%);box-shadow:0 0 60px 10px rgba(255,160,60,.35);animation:orb 2.6s ease-in-out infinite}
+@keyframes orb{50%{transform:scale(1.08);box-shadow:0 0 90px 18px rgba(255,160,60,.45)}}
+.ld-t{font-size:26px;font-weight:200;letter-spacing:.62em;margin-right:-.62em;text-shadow:0 2px 20px rgba(0,0,0,.8)}
+.ld-s{margin-top:8px;font-size:10px;letter-spacing:.42em;color:var(--mut)}
+.ld-p{height:48px;margin-top:26px;transition:opacity .5s}
+.ld-bar{width:260px;height:2px;margin:0 auto 12px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden}
+#ldBar{display:block;height:100%;background:linear-gradient(90deg,#ff9a3c,#ffe0a0);transform-origin:left;transform:scaleX(0);transition:transform .2s}
+.ld-m{font-size:11px;color:#98a4b4;letter-spacing:.1em}
+#ldPct{margin-left:8px;color:var(--acc)}
+
+/* ---------- 窄屏 ---------- */
+@media (max-width:1180px){
+  #datePop{top:auto;bottom:calc(var(--dock-h) + 30px + var(--safe-b))}
+}
+@media (max-width:760px){
+  :root{--top:56px}
+  #top{padding:10px 8px 0 14px;gap:10px}
+  .brand{display:none}
+  #bFull,#bHelp,#bHide{display:none}
+  #fpsPill{margin-right:0;padding:0 8px}
+  #graph{display:none}
+  #perfPop{right:8px}
+  #datePop{left:8px;right:8px;width:auto}
+  #info{left:8px;right:8px;top:auto;bottom:calc(var(--dock-h) + 22px + var(--safe-b));width:auto;max-height:52vh}
+  .i-head{padding:12px 10px 12px 14px}
+  .sw.lg{width:32px;height:32px}
+  #iName{font-size:18px}
+  #dock{left:8px;right:8px;transform:none;max-width:none;bottom:calc(8px + var(--safe-b))}
+  .dock-row>.vdiv{display:none}
+  #nav{flex:1;justify-content:flex-start}
+  .nb{padding:0 10px;height:36px}
+  #speed{width:58px;margin:0 4px}
+  #speedLbl{min-width:52px;font-size:11px}
+  #date,#time{font-size:12px;white-space:nowrap}
+  #clock{gap:6px;padding:0 6px}
+  #bNow,#timebar>.vdiv{display:none}
+  #drawer{left:8px;right:8px;top:8px;bottom:8px;width:auto}
+  .help-card .keys{grid-template-columns:auto 1fr}
+  #caption{left:16px;right:16px;top:calc(var(--top) + 14px);bottom:auto;max-width:none}
+  .c-name{font-size:26px}.c-fact{font-size:13px}
+  .tourbtn span:last-child{display:none}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:.01ms!important;animation:none!important}}
+</style>
+</head>
+<body class="pre">
+<canvas id="c" tabindex="0" aria-label="太阳系三维视图"></canvas>
+<div id="labels"></div>
+
+<div id="ui">
+  <header id="top">
+    <div class="brand autohide fade"><b>太阳系</b><span>SOLAR SYSTEM · REAL-TIME</span></div>
+    <div id="timeSlotTop"><div id="timebar" class="glass hit autohide fade">
+      <button id="bRev" class="ic sm" title="时间倒流（R）" aria-label="时间倒流"></button>
+      <button id="bPlay" class="ic sm" title="暂停 / 继续（空格）" aria-label="暂停或继续"></button>
+      <button id="clock" title="跳转日期" aria-haspopup="dialog"><span id="date" class="num"></span><span class="dot"></span><span id="time" class="num"></span></button>
+      <span class="vdiv"></span>
+      <input type="range" id="speed" min="0" step="1" aria-label="时间流速">
+      <span id="speedLbl" class="num"></span>
+      <button id="bNow" class="txt" title="回到当前时刻">现在</button>
+    </div></div>
+    <div class="tools">
+      <button id="fpsPill" class="pill glass hit" title="性能详情" aria-haspopup="dialog"><b id="fps">--</b><small>FPS</small><canvas id="graph" width="104" height="36"></canvas></button>
+      <button id="bMusic" class="ic hit autohide fade" title="音乐（M）" aria-label="音乐开关"></button>
+      <button id="bSettings" class="ic hit autohide fade" data-ic="sliders" title="设置（S）" aria-label="设置"></button>
+      <button id="bHide" class="ic hit autohide fade" data-ic="eye" title="隐藏界面（H）" aria-label="隐藏界面"></button>
+      <button id="bFull" class="ic hit autohide fade" data-ic="expand" title="全屏（F）" aria-label="全屏"></button>
+      <button id="bHelp" class="ic hit autohide fade" data-ic="help" title="快捷键（?）" aria-label="快捷键"></button>
+    </div>
+  </header>
+
+  <div id="perfPop" class="pop glass hit" role="dialog" aria-label="性能详情">
+    <h4>渲染性能</h4>
+    <div class="kvl"><span>平均帧时间</span><b id="ms">--</b><span>帧时间范围</span><b id="msr">--</b><span>渲染分辨率</span><b id="res">--</b><span>绘制调用</span><b id="calls">--</b><span>三角形</span><b id="tris">--</b></div>
+    <div id="gpu"></div>
+  </div>
+
+  <div id="datePop" class="pop glass hit" role="dialog" aria-label="跳转日期">
+    <h4>跳转到时间</h4>
+    <input type="datetime-local" id="dateIn" step="1" min="1000-01-01T00:00" max="2999-12-31T23:59">
+    <div class="date-row"><button class="txt" data-jump="-365.25">−1 年</button><button class="txt" data-jump="-30.44">−1 月</button><button class="txt" id="bNow2">现在</button><button class="txt" data-jump="30.44">+1 月</button><button class="txt" data-jump="365.25">+1 年</button></div>
+    <h4 style="margin-top:16px">天象</h4>
+    <div class="events" id="events"></div>
+  </div>
+
+  <aside id="info" class="glass hit autohide" aria-live="polite">
+    <div class="i-head" id="iHead">
+      <span id="iSw" class="sw lg"></span>
+      <div class="i-title"><div id="iName"></div><div id="iEn"></div></div>
+      <button id="iCollapse" class="ic sm" data-ic="chevron" title="收起 / 展开（I）" aria-label="收起信息卡"></button>
+    </div>
+    <div class="i-body">
+      <div class="i-tags"><span id="iType" class="chip"></span><span id="iScale" class="chip ghost"></span></div>
+      <p id="iDesc"></p>
+      <div class="i-sec"><span class="live-dot"></span>实时数据</div>
+      <div id="iLive" class="kv"></div>
+      <div class="i-sec">基本参数</div>
+      <div id="iStats" class="kv"></div>
+      <div class="i-actions" id="iActions"></div>
+    </div>
+  </aside>
+
+  <footer id="dock" class="glass hit autohide">
+    <div id="moons"></div>
+    <div class="dock-row">
+      <button id="bOverview" class="ic" data-ic="orbits" title="全景（O）" aria-label="全景"></button>
+      <span class="vdiv"></span>
+      <nav id="nav" aria-label="天体"></nav>
+      <span class="vdiv"></span>
+      <button id="bTour" class="nb tourbtn" title="自动漫游（T）" aria-label="自动漫游"><span data-ic="route"></span><span>漫游</span></button>
+    </div>
+    <div id="timeSlotDock"></div>
+  </footer>
+
+  <aside id="drawer" class="glass hit" aria-hidden="true" aria-label="设置">
+    <div class="d-head"><h3>设置</h3><button class="ic" id="dClose" data-ic="close" aria-label="关闭设置"></button></div>
+    <div class="tabs" role="tablist">
+      <button class="on" data-tab="quality" role="tab">画质</button><button data-tab="display" role="tab">显示</button><button data-tab="audio" role="tab">音频</button><button data-tab="about" role="tab">关于</button>
+    </div>
+    <section class="pane on" data-pane="quality">
+      <div class="group"><h4>预设</h4><div class="presets" id="presets"></div></div>
+      <div class="group"><h4>细调</h4>
+        <div class="row"><span>渲染分辨率</span><div class="ctl"><input type="range" id="sScale" min="0.5" max="1.5" step="0.05"><em id="vScale"></em></div></div>
+        <div class="row"><span>纹理精度</span><select id="sTex"><option value="1024">1K · 快速</option><option value="2048">2K · 均衡</option><option value="4096">4K · 精细</option></select></div>
+        <div class="row"><span>抗锯齿</span><select id="sMsaa"><option value="0">关闭</option><option value="2">MSAA 2×</option><option value="4">MSAA 4×</option><option value="8">MSAA 8×</option></select></div>
+        <div class="row"><span>曝光</span><div class="ctl"><input type="range" id="sExposure" min="0.4" max="2" step="0.05"><em id="vExposure"></em></div></div>
+      </div>
+      <div class="group"><h4>镜头特效</h4>
+        <div class="row"><span>泛光</span><label class="sw-t"><input type="checkbox" data-k="bloom" aria-label="泛光"><i></i></label></div>
+        <div class="row"><span>体积光</span><label class="sw-t"><input type="checkbox" data-k="rays" aria-label="体积光"><i></i></label></div>
+        <div class="row"><span>镜头光晕</span><label class="sw-t"><input type="checkbox" data-k="flare" aria-label="镜头光晕"><i></i></label></div>
+        <div class="row"><span>胶片质感<small>颗粒、暗角与轻微色散</small></span><label class="sw-t"><input type="checkbox" data-k="film" aria-label="胶片质感"><i></i></label></div>
+        <div class="row"><span>地表微细节<small>近距离时补充纹理之外的起伏</small></span><label class="sw-t"><input type="checkbox" data-k="detail" aria-label="地表微细节"><i></i></label></div>
+      </div>
+    </section>
+    <section class="pane" data-pane="display">
+      <div class="group"><h4>场景</h4>
+        <div class="row"><span>轨道线</span><label class="sw-t"><input type="checkbox" data-k="orbits" aria-label="轨道线"><i></i></label></div>
+        <div class="row"><span>天体标签</span><label class="sw-t"><input type="checkbox" data-k="labels" aria-label="天体标签"><i></i></label></div>
+        <div class="row"><span>小行星带</span><label class="sw-t"><input type="checkbox" data-k="belt" aria-label="小行星带"><i></i></label></div>
+      </div>
+      <div class="group"><h4>界面</h4>
+        <div class="row"><span>闲置时自动漫游<small>90 秒无操作后自动开始漫游</small></span><label class="sw-t"><input type="checkbox" data-k="idleTour" aria-label="闲置时自动漫游"><i></i></label></div>
+        <div class="row"><span>漫游时自动隐藏界面<small>静置 4 秒后淡出，只保留字幕与帧数</small></span><label class="sw-t"><input type="checkbox" data-k="autohide" aria-label="漫游时自动隐藏界面"><i></i></label></div>
+      </div>
+    </section>
+    <section class="pane" data-pane="audio">
+      <div class="group"><h4>配乐</h4>
+        <div class="row"><span>背景音乐</span><label class="sw-t"><input type="checkbox" data-k="music" aria-label="背景音乐"><i></i></label></div>
+        <div class="row"><span>音量</span><div class="ctl"><input type="range" id="sVolume" min="0" max="1" step="0.01" aria-label="音量"><em id="vVolume"></em></div></div>
+        <div class="row"><span>随天体变化<small>聚焦不同天体时切换调性与音色</small></span><label class="sw-t"><input type="checkbox" data-k="adaptive" aria-label="随天体变化"><i></i></label></div>
+        <div class="row"><span>飞行音效</span><label class="sw-t"><input type="checkbox" data-k="sfx" aria-label="飞行音效"><i></i></label></div>
+      </div>
+      <div class="about"><p>配乐由浏览器实时合成：柔和的弦垫、低音、如星光闪烁的钟声与宇宙风，经长混响融为一体。每次播放都不重复；时间流速越快钟声越密，靠近太阳时音色更明亮。</p></div>
+    </section>
+    <section class="pane about" data-pane="about">
+      <div class="group"><h4>关于</h4>
+        <p>行星位置按 JPL 轨道根数实时计算，月球使用解析历表，自转采用 IAU 模型；日月食在真实尺度下计算。为了看得见，画面中的天体半径被放大、距离被压缩。</p>
+      </div>
+      <div class="group"><h4>数据与素材</h4>
+        <p>行星贴图 © <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a>（<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>），基于 NASA 数据 · 月球高程 NASA SVS · 恒星 Hipparcos 星表 · 银河轮廓 d3-celestial · 海岸线 Natural Earth</p>
+      </div>
+    </section>
+  </aside>
+
+  <div id="groupPop" class="pop glass hit" role="dialog"></div>
+
+  <div id="caption" aria-live="polite">
+    <div class="c-kick"><span id="cKick"></span></div>
+    <div class="c-name" id="cName"></div>
+    <div class="c-en" id="cEn"></div>
+    <div class="c-fact" id="cFact"></div>
+    <div class="c-bar"><i id="cBar"></i></div>
+    <div class="c-ctl autohide fade">
+      <button class="ic sm" id="tPrev" title="上一站（←）" aria-label="上一站"></button>
+      <button class="ic sm" id="tPause" title="停留 / 继续" aria-label="停留或继续"></button>
+      <button class="ic sm" id="tNext" title="下一站（→）" aria-label="下一站"></button>
+      <button class="txt" id="tExit" title="退出漫游（T）">退出漫游</button>
+    </div>
+  </div>
+
+  <div id="toast" class="glass" role="status"><span id="toastMsg"></span><div class="bar"><i id="toastBar"></i></div></div>
+</div>
+
+<div id="help" role="dialog" aria-label="快捷键">
+  <div class="help-card glass">
+    <header><h3>快捷键</h3><button class="ic" id="hClose" data-ic="close" aria-label="关闭"></button></header>
+    <div class="keys">
+      <span><kbd>拖动</kbd></span><span>旋转视角</span><span><kbd>滚轮</kbd></span><span>缩放</span>
+      <span><kbd>单击</kbd></span><span>聚焦天体</span><span><kbd>0</kbd>–<kbd>9</kbd></span><span>切换天体</span>
+      <span><kbd>空格</kbd></span><span>暂停 / 继续</span><span><kbd>[</kbd><kbd>]</kbd></span><span>调节时间流速</span>
+      <span><kbd>R</kbd></span><span>时间倒流</span><span><kbd>O</kbd></span><span>全景</span>
+      <span><kbd>T</kbd></span><span>自动漫游</span><span><kbd>←</kbd><kbd>→</kbd></span><span>漫游上一站 / 下一站</span>
+      <span><kbd>I</kbd></span><span>收起信息卡</span>
+      <span><kbd>M</kbd></span><span>音乐开关</span><span><kbd>S</kbd></span><span>设置</span>
+      <span><kbd>H</kbd></span><span>隐藏界面</span><span><kbd>F</kbd></span><span>全屏</span>
+    </div>
+  </div>
+</div>
+
+<div id="loader"><div class="ld">
+  <div class="ld-orb"></div>
+  <div class="ld-t">太阳系</div>
+  <div class="ld-s">SOLAR SYSTEM · REAL-TIME</div>
+  <div class="ld-p"><div class="ld-bar"><i id="ldBar"></i></div><div class="ld-m"><span id="ldMsg">正在初始化</span><span id="ldPct" class="num">0%</span></div></div>
+</div></div>
+<!--APP-->
+</body>
+</html>

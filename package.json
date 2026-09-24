@@ -1,0 +1,27 @@
+{
+  "name": "solar-system",
+  "version": "1.0.0",
+  "description": "电影级实时太阳系模拟（单文件离线 HTML）",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node test/checks.mjs && node test/smoke.mjs && node test/audio-live.mjs && node test/ui-flow.mjs",
+    "perf": "node test/perf.mjs",
+    "audio": "node test/audio.mjs"
+  },
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "d3-celestial": "^0.7.35",
+    "esbuild": "^0.28.2",
+    "puppeteer-core": "^25.11.0",
+    "sharp": "^0.35.4",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

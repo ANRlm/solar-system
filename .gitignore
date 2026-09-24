@@ -1,0 +1,4 @@
+node_modules/
+# 构建产物：由 GitHub Actions 构建并发布到 Pages
+solar-system.html
+.DS_Store
