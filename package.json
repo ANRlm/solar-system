@@ -8,7 +8,7 @@
     "perf": "node test/perf.mjs",
     "audio": "node test/audio.mjs"
   },
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "three": "^0.170.0"

@@ -35,3 +35,7 @@ npm test             # 天文校验、冒烟、配乐、界面流程（需要本
 - 恒星：Hipparcos 星表；银河轮廓：[d3-celestial](https://github.com/ofrohn/d3-celestial)
 - 海岸线：Natural Earth（经 [world-atlas](https://github.com/topojson/world-atlas)）
 - 渲染：[three.js](https://threejs.org/)
+
+## 许可证
+
+代码以 [MIT](LICENSE) 许可证发布。第三方素材（上方“数据与素材”所列贴图与数据）保留其各自的许可证，例如行星贴图须按 CC BY 4.0 署名。
