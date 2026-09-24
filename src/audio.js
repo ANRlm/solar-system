@@ -302,7 +302,10 @@ export class Player {
     const tick = () => this.ctx.state === 'running' && this.m.scheduleUntil(this.ctx.currentTime + 4);
     tick();
     setInterval(tick, 400);
+    // 后台：标签页隐藏（切标签、最小化）或窗口失去焦点（切到别的应用但浏览器窗口仍可见）
     document.addEventListener('visibilitychange', () => this.sync());
+    addEventListener('blur', () => this.sync());
+    addEventListener('focus', () => this.sync());
     this.sync();
   }
 
@@ -310,7 +313,7 @@ export class Player {
   sync() {
     if (!this.m) return;
     clearTimeout(this.suspendTimer);
-    if (this.s.music && !document.hidden) {
+    if (this.s.music && !document.hidden && document.hasFocus()) {
       this.ctx.resume();
       this.m.setVolume(this.s.volume * 0.9, this.ctx.currentTime, 1.5);
     } else {
