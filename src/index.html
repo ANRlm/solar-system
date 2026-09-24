@@ -37,6 +37,7 @@ body.pre #ui,body.pre #labels{opacity:0;pointer-events:none}
 .ic.on{color:var(--acc)}
 .ic svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .ic svg.solid{fill:currentColor;stroke:none}
+.ic.lang{font-size:12.5px;font-weight:600;letter-spacing:.06em}
 .ic.sm{width:30px;height:30px}.ic.sm svg{width:16px;height:16px}
 .pill{display:flex;align-items:center;gap:10px;height:36px;padding:0 14px;border-radius:12px}
 .chip{display:inline-flex;align-items:center;height:20px;padding:0 9px;border-radius:10px;font-size:11px;color:var(--acc);border:1px solid rgba(255,196,110,.3);white-space:nowrap}
@@ -241,6 +242,13 @@ kbd{display:inline-block;min-width:24px;height:22px;padding:0 6px;border-radius:
 .ld-bar{width:260px;height:2px;margin:0 auto 12px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden}
 #ldBar{display:block;height:100%;background:linear-gradient(90deg,#ff9a3c,#ffe0a0);transform-origin:left;transform:scaleX(0);transition:transform .2s}
 .ld-m{font-size:11px;color:#98a4b4;letter-spacing:.1em}
+/* 英文：为中文设计的大字距对拉丁字母过松，标题收紧 */
+html[lang=en] .brand b{letter-spacing:.2em}
+html[lang=en] #iName{letter-spacing:.04em}
+html[lang=en] .c-name{letter-spacing:.06em}
+html[lang=en] .d-head h3,html[lang=en] .help-card h3{letter-spacing:.12em}
+html[lang=en] .label{letter-spacing:.06em}
+html[lang=en] .ld-t{letter-spacing:.3em;margin-right:-.3em}
 #ldPct{margin-left:8px;color:var(--acc)}
 
 /* ---------- 窄屏 ---------- */
@@ -284,7 +292,7 @@ kbd{display:inline-block;min-width:24px;height:22px;padding:0 6px;border-radius:
 
 <div id="ui">
   <header id="top">
-    <div class="brand autohide fade"><b>太阳系</b><span>SOLAR SYSTEM · REAL-TIME</span></div>
+    <div class="brand autohide fade"><b>太阳系</b><span id="brandSub" data-i18n-html>SOLAR SYSTEM · REAL-TIME</span></div>
     <div id="timeSlotTop"><div id="timebar" class="glass hit autohide fade">
       <button id="bRev" class="ic sm" title="时间倒流（R）" aria-label="时间倒流"></button>
       <button id="bPlay" class="ic sm" title="暂停 / 继续（空格）" aria-label="暂停或继续"></button>
@@ -300,6 +308,7 @@ kbd{display:inline-block;min-width:24px;height:22px;padding:0 6px;border-radius:
       <button id="bSettings" class="ic hit autohide fade" data-ic="sliders" title="设置（S）" aria-label="设置"></button>
       <button id="bHide" class="ic hit autohide fade" data-ic="eye" title="隐藏界面（H）" aria-label="隐藏界面"></button>
       <button id="bFull" class="ic hit autohide fade" data-ic="expand" title="全屏（F）" aria-label="全屏"></button>
+      <button id="bLang" class="ic hit autohide fade lang" title="切换到英文（L）" aria-label="切换到英文（L）"></button>
       <button id="bHelp" class="ic hit autohide fade" data-ic="help" title="快捷键（?）" aria-label="快捷键"></button>
     </div>
   </header>
@@ -393,7 +402,7 @@ kbd{display:inline-block;min-width:24px;height:22px;padding:0 6px;border-radius:
         <p>行星位置按 JPL 轨道根数实时计算，月球使用解析历表，自转采用 IAU 模型；日月食在真实尺度下计算。为了看得见，画面中的天体半径被放大、距离被压缩。</p>
       </div>
       <div class="group"><h4>数据与素材</h4>
-        <p>行星贴图 © <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a>（<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>），基于 NASA 数据 · 月球高程 NASA SVS · 恒星 Hipparcos 星表 · 银河轮廓 d3-celestial · 海岸线 Natural Earth</p>
+        <p id="credits" data-i18n-html>行星贴图 © <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a>（<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>），基于 NASA 数据 · 月球高程 NASA SVS · 恒星 Hipparcos 星表 · 银河轮廓 d3-celestial · 海岸线 Natural Earth</p>
       </div>
     </section>
   </aside>
@@ -419,14 +428,14 @@ kbd{display:inline-block;min-width:24px;height:22px;padding:0 6px;border-radius:
 
 <div id="help" role="dialog" aria-label="快捷键">
   <div class="help-card glass">
-    <header><h3>快捷键</h3><button class="ic" id="hClose" data-ic="close" aria-label="关闭"></button></header>
+    <header><h3>快捷键</h3><button class="ic" id="hClose" data-ic="close" aria-label="关闭快捷键"></button></header>
     <div class="keys">
       <span><kbd>拖动</kbd></span><span>旋转视角</span><span><kbd>滚轮</kbd></span><span>缩放</span>
       <span><kbd>单击</kbd></span><span>聚焦天体</span><span><kbd>0</kbd>–<kbd>9</kbd></span><span>切换天体</span>
       <span><kbd>空格</kbd></span><span>暂停 / 继续</span><span><kbd>[</kbd><kbd>]</kbd></span><span>调节时间流速</span>
       <span><kbd>R</kbd></span><span>时间倒流</span><span><kbd>O</kbd></span><span>全景</span>
       <span><kbd>T</kbd></span><span>自动漫游</span><span><kbd>←</kbd><kbd>→</kbd></span><span>漫游上一站 / 下一站</span>
-      <span><kbd>I</kbd></span><span>收起信息卡</span>
+      <span><kbd>I</kbd></span><span>收起信息卡</span><span><kbd>L</kbd></span><span>中英文切换</span>
       <span><kbd>M</kbd></span><span>音乐开关</span><span><kbd>S</kbd></span><span>设置</span>
       <span><kbd>H</kbd></span><span>隐藏界面</span><span><kbd>F</kbd></span><span>全屏</span>
     </div>

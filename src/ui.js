@@ -1,5 +1,7 @@
 // 界面层：顶栏、信息卡、底部坞、设置抽屉、弹出层、提示与快捷键。引擎能力通过 app 接口调用
 
+import { L, nameOf, textOf, tourFact, yearMonth, isEn, setLang, onLang, applyDom } from './i18n.js';
+
 const $ = (id) => document.getElementById(id);
 
 // 24×24 线性图标（描边）与实心图标
@@ -51,6 +53,7 @@ export function createUI(app) {
   const { bodies, sim, RATES, settings } = app;
   const body = document.body;
   let entered = false, focus = null;
+  applyDom(); // 登记页面上的静态中文（须在动态内容渲染之前）；英文模式下同时完成替换
 
   document.querySelectorAll('[data-ic]').forEach((el) => (el.innerHTML = icon(el.dataset.ic)));
   $('bRev').innerHTML = icon('rewind');
@@ -61,7 +64,7 @@ export function createUI(app) {
   const navBtn = (b, parent, cls) => {
     const el = document.createElement('button');
     el.className = cls;
-    el.innerHTML = `${swatch(b)}<span>${b.def.name}</span>`;
+    el.innerHTML = `${swatch(b)}<span>${nameOf(b)}</span>`;
     el.onclick = () => app.focusOn(b.id);
     b.navBtn = el;
     parent.append(el);
@@ -74,20 +77,19 @@ export function createUI(app) {
     const el = document.createElement('button');
     el.className = 'nb grp';
     el.dataset.grp = key;
-    el.innerHTML = `${swatch(list[0])}<span>${name}</span>${icon('chevUp')}`;
+    el.innerHTML = `${swatch(list[0])}<span>${L(name)}</span>${icon('chevUp')}`;
     el.onclick = (e) => { e.stopPropagation(); openGroup(key, el); };
     list.forEach((b) => (b.grpBtn = el));
     $('nav').append(el);
   }
-  const ym = (t) => { const d = new Date(t); return `${d.getFullYear()} 年 ${d.getMonth() + 1} 月`; };
   function openGroup(key, btn) {
     const pop = $('groupPop'), [name, list] = GROUPS[key];
     if (pop.classList.contains('open') && pop.dataset.grp === key) return closePops();
     closePops();
     pop.dataset.grp = key;
-    pop.innerHTML = `<h4>${name}</h4>` + list.map((b) => {
-      const sub = b.def.kind === 'comet' ? `下次过近日点 · ${ym(app.nextPerihelion(b))}` : `距太阳 ${b.au.length().toFixed(1)} AU · ${b.def.type.split(' · ')[1] || ''}`;
-      return `<button class="gi${b === focus ? ' active' : ''}" data-id="${b.id}">${swatch(b)}<span><b>${b.def.name}</b><small>${sub}</small></span></button>`;
+    pop.innerHTML = `<h4>${L(name)}</h4>` + list.map((b) => {
+      const sub = b.def.kind === 'comet' ? L('下次过近日点 · {0}', yearMonth(app.nextPerihelion(b))) : L('距太阳 {0} AU · {1}', b.au.length().toFixed(1), textOf(b.def, 'type').split(' · ')[1] || '');
+      return `<button class="gi${b === focus ? ' active' : ''}" data-id="${b.id}">${swatch(b)}<span><b>${nameOf(b)}</b><small>${sub}</small></span></button>`;
     }).join('');
     pop.querySelectorAll('[data-id]').forEach((el) => (el.onclick = () => { closePops(); app.focusOn(el.dataset.id); }));
     const r = btn.getBoundingClientRect();
@@ -113,51 +115,55 @@ export function createUI(app) {
 
   function scaleText(b) {
     const d = b.def;
-    if (d.kind === 'comet') return `彗核半径约 ${d.km} km`;
-    if (b.id === 'earth') return '其他天体的尺寸参照';
-    if (b.id === 'system') return '日球层直径约 240 AU';
+    if (d.kind === 'comet') return L('彗核半径约 {0} km', d.km);
+    if (b.id === 'earth') return L('其他天体的尺寸参照');
+    if (b.id === 'system') return L('日球层直径约 240 AU');
     const r = d.km / 6371;
-    return r >= 1 ? `直径是地球的 ${r >= 10 ? r.toFixed(0) : r.toFixed(1)} 倍` : `直径是地球的 ${Math.round(r * 100)}%`;
+    return r >= 1 ? L('直径是地球的 {0} 倍', r >= 10 ? r.toFixed(0) : r.toFixed(1)) : L('直径是地球的 {0}%', Math.round(r * 100));
   }
   function renderActions(b) {
     const acts = [];
-    acts.push(`<button class="btn${app.isOrbiting() ? ' on' : ''}" data-act="orbit">${icon('rotate')}环绕</button>`);
-    if (b.parent) acts.push(`<button class="btn" data-act="parent">${icon('up')}返回${b.parent.def.name}</button>`);
-    if (b.def.kind === 'comet') acts.push(`<button class="btn" data-act="peri">${icon('comet')}跳到下次近日点</button>`);
+    acts.push(`<button class="btn${app.isOrbiting() ? ' on' : ''}" data-act="orbit">${icon('rotate')}${L('环绕')}</button>`);
+    if (b.parent) acts.push(`<button class="btn" data-act="parent">${icon('up')}${L('返回{0}', nameOf(b.parent))}</button>`);
+    if (b.def.kind === 'comet') acts.push(`<button class="btn" data-act="peri">${icon('comet')}${L('跳到下次近日点')}</button>`);
     $('iActions').innerHTML = acts.join('');
     $('iActions').querySelectorAll('[data-act]').forEach((el) => (el.onclick = () => {
       const a = el.dataset.act;
       if (a === 'orbit') { app.setOrbit(!app.isOrbiting()); el.classList.toggle('on', app.isOrbiting()); }
       else if (a === 'parent') app.focusOn(b.parent.id);
-      else if (a === 'peri') { app.setTime(app.nextPerihelion(b)); app.focusOn(b.id); toast('已跳到下次过近日点'); }
+      else if (a === 'peri') { app.setTime(app.nextPerihelion(b)); app.focusOn(b.id); toast(L('已跳到下次过近日点')); }
     }));
   }
-  function onFocus(b) {
+  // quiet：切换语言时重绘，不播放切换动画、不弹提示
+  function onFocus(b, quiet) {
     focus = b;
     const d = b.def, sw = $('iSw');
     sw.style.setProperty('--c', d.color);
     sw.dataset.k = d.kind;
     sw.toggleAttribute('data-ring', d.rings === 'saturn');
     $('bOverview').classList.toggle('on', b.id === 'system');
-    $('iName').textContent = d.name;
-    $('iEn').textContent = d.en;
-    $('iType').textContent = d.type;
+    // 标题用当前语言，副标题用另一种语言
+    $('iName').textContent = nameOf(b);
+    $('iEn').textContent = isEn() ? d.name : d.en;
+    $('iType').textContent = textOf(d, 'type');
     $('iScale').textContent = scaleText(b);
-    $('iDesc').textContent = d.desc;
-    $('iStats').innerHTML = kv(d.stats);
+    $('iDesc').textContent = textOf(d, 'desc');
+    $('iStats').innerHTML = kv(textOf(d, 'stats'));
     $('iLive').innerHTML = kv(app.liveRows(b));
     renderActions(b);
     // 远离太阳的彗星还没有彗尾：提示可以跳到近日点观看
-    if (d.kind === 'comet' && b.act < 0.05 && !app.isTour()) toast(`${d.name}距太阳 ${b.au.length().toFixed(1)} AU，彗核冻结、尚未形成彗尾——点「跳到下次近日点」即可观看`, undefined, 5000);
-    info.classList.remove('swap');
-    void info.offsetWidth;
-    info.classList.add('swap');
+    if (!quiet && d.kind === 'comet' && b.act < 0.05 && !app.isTour()) toast(L('{0}距太阳 {1} AU，彗核冻结、尚未形成彗尾——点「跳到下次近日点」即可观看', nameOf(b), b.au.length().toFixed(1)), undefined, 5000);
+    if (!quiet) {
+      info.classList.remove('swap');
+      void info.offsetWidth;
+      info.classList.add('swap');
+    }
     const fam = b.parent || b;
     let moons = 0;
     for (const [key, [name, list]] of Object.entries(GROUPS)) {
       const el = $('nav').querySelector(`[data-grp=${key}]`), cur = list.includes(b) ? b : null;
       el.classList.toggle('active', !!cur);
-      el.innerHTML = `${swatch(cur || list[0])}<span>${cur ? cur.def.name : name}</span>${icon('chevUp')}`;
+      el.innerHTML = `${swatch(cur || list[0])}<span>${cur ? nameOf(cur) : L(name)}</span>${icon('chevUp')}`;
     }
     for (const o of bodies) {
       o.navBtn?.classList.toggle('active', o === b);
@@ -165,7 +171,7 @@ export function createUI(app) {
       if (o.parent) { o.navBtn.hidden = !show; moons += show; }
     }
     $('moons').classList.toggle('show', moons > 0);
-    (b.navBtn || b.grpBtn)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    if (!quiet) (b.navBtn || b.grpBtn)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
   }
 
   // ---------------------------------------------------------------- 时间控制
@@ -175,7 +181,7 @@ export function createUI(app) {
   function syncTime() {
     speed.value = sim.ri;
     fill(speed);
-    $('speedLbl').textContent = sim.paused ? '已暂停' : (sim.rev ? '−' : '') + RATES[sim.ri][1];
+    $('speedLbl').textContent = sim.paused ? L('已暂停') : (sim.rev ? '−' : '') + L(RATES[sim.ri][1]);
     $('speedLbl').classList.toggle('paused', sim.paused);
     $('bPlay').classList.toggle('paused', sim.paused);
     $('bRev').classList.toggle('on', sim.rev);
@@ -185,7 +191,7 @@ export function createUI(app) {
   speed.oninput = () => setRate(+speed.value);
   $('bPlay').onclick = () => { sim.paused = !sim.paused; syncTime(); };
   $('bRev').onclick = () => { sim.rev = !sim.rev; syncTime(); };
-  const goNow = () => { app.setTime(Date.now()); sim.ri = 0; sim.rev = false; sim.paused = false; syncTime(); toast('已回到当前时刻'); };
+  const goNow = () => { app.setTime(Date.now()); sim.ri = 0; sim.rev = false; sim.paused = false; syncTime(); toast(L('已回到当前时刻')); };
   $('bNow').onclick = goNow;
   $('bNow2').onclick = () => { goNow(); closePops(); };
   $('bOverview').onclick = () => app.overview();
@@ -214,16 +220,19 @@ export function createUI(app) {
   }
   $('dateIn').onchange = (e) => { const t = new Date(e.target.value).getTime(); if (t >= app.T_MIN && t <= app.T_MAX) app.setTime(t); };
   document.querySelectorAll('[data-jump]').forEach((el) => (el.onclick = () => { app.setTime(sim.t + +el.dataset.jump * 864e5); syncDateInput(true); }));
-  $('events').innerHTML = EVENTS.map(([, name, date], i) => `<button data-ev="${i}"><span>${name}</span><small>${date}</small></button>`).join('');
-  $('events').querySelectorAll('[data-ev]').forEach((el) => (el.onclick = () => {
+  const renderEvents = () => ($('events').innerHTML = EVENTS.map(([, name, date], i) => `<button data-ev="${i}"><span>${L(name)}</span><small>${date}</small></button>`).join(''));
+  renderEvents();
+  $('events').onclick = (e) => {
+    const el = e.target.closest('[data-ev]');
+    if (!el) return;
     const [iso, name, , id, geo] = EVENTS[+el.dataset.ev];
     app.setTime(Date.parse(iso));
     sim.paused = false; sim.rev = false;
     setRate(1);
     app.focusOn(id, geo ? { geo, geoTilt: 30 } : {});
     closePops();
-    toast(name);
-  }));
+    toast(L(name));
+  };
 
   // ---------------------------------------------------------------- 设置抽屉
   const drawer = $('drawer');
@@ -240,11 +249,16 @@ export function createUI(app) {
     drawer.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === t));
     drawer.querySelectorAll('[data-pane]').forEach((p) => p.classList.toggle('on', p.dataset.pane === t.dataset.tab));
   }));
-  $('presets').innerHTML = Object.entries(PRESET_INFO).map(([k, [name, sub]]) => `<button data-p="${k}"><b>${name}</b><small>${sub}</small></button>`).join('');
-  $('presets').querySelectorAll('[data-p]').forEach((el) => (el.onclick = () => {
+  const renderPresets = () => {
+    $('presets').innerHTML = Object.entries(PRESET_INFO).map(([k, [name, sub]]) => `<button data-p="${k}"${k === settings.preset ? ' class="on"' : ''}><b>${L(name)}</b><small>${L(sub)}</small></button>`).join('');
+  };
+  renderPresets();
+  $('presets').onclick = (e) => {
+    const el = e.target.closest('[data-p]');
+    if (!el) return;
     app.setSetting({ ...app.PRESETS[el.dataset.p], preset: el.dataset.p }, false);
-    toast(`画质：${PRESET_INFO[el.dataset.p][0]}`);
-  }));
+    toast(L('画质：{0}', L(PRESET_INFO[el.dataset.p][0])));
+  };
   $('sScale').oninput = (e) => app.setSetting({ scale: +e.target.value });
   $('sTex').onchange = (e) => app.setSetting({ tex: +e.target.value });
   $('sMsaa').onchange = (e) => app.setSetting({ msaa: +e.target.value });
@@ -278,7 +292,7 @@ export function createUI(app) {
     const on = !(settings.music && app.player.unlocked);
     if (on) app.player.unlock();
     app.setSetting({ music: on }, false);
-    toast(on ? '音乐已开启' : '音乐已关闭');
+    toast(L(on ? '音乐已开启' : '音乐已关闭'));
   };
 
   // ---------------------------------------------------------------- 漫游字幕
@@ -288,17 +302,23 @@ export function createUI(app) {
   const syncPause = () => ($('tPause').innerHTML = app.tourPaused() ? icon('play') : icon('pause'));
   $('tPrev').onclick = () => app.tourStep(-1);
   $('tNext').onclick = () => app.tourStep(1);
-  $('tPause').onclick = () => { app.tourPause(); syncPause(); toast(app.tourPaused() ? '已停留在这一站' : '继续漫游'); };
+  $('tPause').onclick = () => { app.tourPause(); syncPause(); toast(L(app.tourPaused() ? '已停留在这一站' : '继续漫游')); };
   $('tExit').onclick = () => app.toggleTour(false);
-  let capTimer;
+  let capTimer, lastStop = null;
+  // 字幕文字：没有专门的字幕时取简介第一句
+  function renderCaption(st) {
+    const d = st.overview ? app.SYSTEM : st.body.def, first = (s) => (isEn() ? s.split(/(?<=\.)\s/)[0] : s.split('。')[0] + '。');
+    $('cKick').textContent = L('自动漫游 · 第 {0} 站 / 共 {1} 站', st.index + 1, st.total);
+    $('cName').textContent = isEn() ? d.en : d.name;
+    $('cEn').textContent = isEn() ? d.name : d.en;
+    $('cFact').textContent = st.fact ? tourFact(st.id, st.fact) : first(textOf(d, 'desc'));
+  }
   function onStop(st) {
     cap.classList.remove('show');
     clearTimeout(capTimer);
+    lastStop = st;
     capTimer = setTimeout(() => {
-      $('cKick').textContent = `自动漫游 · 第 ${st.index + 1} 站 / 共 ${st.total} 站`;
-      $('cName').textContent = st.overview ? '太阳系' : st.body.def.name;
-      $('cEn').textContent = st.overview ? 'The Solar System' : st.body.def.en;
-      $('cFact').textContent = st.fact;
+      renderCaption(st);
       syncPause();
       cap.classList.add('show');
     }, st.delay * 1000 * 0.7);
@@ -307,7 +327,26 @@ export function createUI(app) {
   // ---------------------------------------------------------------- 其他按钮、帮助
   const toggleHide = () => body.classList.toggle('hide-ui');
   const setHelp = (open) => $('help').classList.toggle('open', open);
-  $('bHide').onclick = () => { toggleHide(); toast('按 H 恢复界面'); };
+  $('bHide').onclick = () => { toggleHide(); toast(L('按 H 恢复界面')); };
+
+  // ---------------------------------------------------------------- 中英文切换：原地重绘所有动态文字，时间、聚焦与设置都保持不变
+  const syncLangBtn = () => ($('bLang').textContent = isEn() ? '中' : 'EN');
+  syncLangBtn();
+  const toggleLang = () => { setLang(isEn() ? 'zh' : 'en'); toast(isEn() ? 'Switched to English' : '已切换到中文'); };
+  $('bLang').onclick = toggleLang;
+  onLang(() => {
+    syncLangBtn();
+    for (const b of bodies) {
+      if (b.navBtn) b.navBtn.lastChild.textContent = nameOf(b);
+      if (b.label) b.label.lastChild.textContent = nameOf(b);
+    }
+    if (focus) onFocus(focus, true);
+    renderPresets();
+    renderEvents();
+    syncTime();
+    if (lastStop && cap.classList.contains('show')) renderCaption(lastStop);
+    closePops();
+  });
   $('bFull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.());
   $('bHelp').onclick = () => setHelp(true);
   $('hClose').onclick = () => setHelp(false);
@@ -331,7 +370,7 @@ export function createUI(app) {
       if (msg) $('ldMsg').textContent = msg;
       $('ldBar').style.transform = `scaleX(${f})`;
       $('ldPct').textContent = `${Math.round(f * 100)}%`;
-    } else toast(msg || '正在重新生成行星表面', f);
+    } else toast(msg || L('正在重新生成行星表面'), f);
   }
   function ready() {
     entered = true;
@@ -348,7 +387,7 @@ export function createUI(app) {
     };
     addEventListener('pointerdown', unlock, true);
     addEventListener('keydown', unlock, true);
-    setTimeout(() => settings.music && !app.player.unlocked && toast('点击画面任意处即可开启音乐'), 3000);
+    setTimeout(() => settings.music && !app.player.unlocked && toast(L('点击画面任意处即可开启音乐')), 3000);
   }
 
   // ---------------------------------------------------------------- 键盘
@@ -363,7 +402,7 @@ export function createUI(app) {
     else if (/^[0-9]$/.test(k)) app.focusOn(app.KEYS[+k]);
     else if (k === '?' || k === '/') setHelp(!$('help').classList.contains('open'));
     else {
-      const act = { h: toggleHide, r: () => $('bRev').click(), t: () => app.toggleTour(), o: () => app.overview(), m: () => $('bMusic').click(), s: () => $('bSettings').click(), i: toggleInfo, f: () => $('bFull').click() }[k.toLowerCase()];
+      const act = { l: toggleLang, h: toggleHide, r: () => $('bRev').click(), t: () => app.toggleTour(), o: () => app.overview(), m: () => $('bMusic').click(), s: () => $('bSettings').click(), i: toggleInfo, f: () => $('bFull').click() }[k.toLowerCase()];
       act?.();
     }
   });
@@ -458,7 +497,7 @@ export function createUI(app) {
       if (on) { infoWasCollapsed = info.classList.contains('collapsed'); info.classList.add('collapsed'); }
       else info.classList.toggle('collapsed', infoWasCollapsed);
       if (!on) { clearTimeout(capTimer); cap.classList.remove('show'); }
-      toast(on ? '自动漫游开始 · 点击画面或按 T 退出' : '已退出漫游');
+      toast(L(on ? '自动漫游开始 · 点击画面或按 T 退出' : '已退出漫游'));
     },
     onStop,
     onOrbit(on) { $('iActions').querySelector('[data-act=orbit]')?.classList.toggle('on', on); },

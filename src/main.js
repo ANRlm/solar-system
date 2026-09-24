@@ -9,6 +9,7 @@ import { BODIES, OCCLUDERS, PRESETS, SYSTEM, TOUR } from './data.js';
 import * as S from './shaders.js';
 import { Music, Player } from './audio.js';
 import { createUI } from './ui.js';
+import { L, nameOf, isEn } from './i18n.js';
 
 const V3 = THREE.Vector3;
 const DEG = Math.PI / 180, AU_KM = 149597870.7, C_KMS = 299792.458, OBL = 23.4392911 * DEG;
@@ -488,7 +489,7 @@ async function loadRealTextures() {
 let busy = false;
 async function generateTextures() {
   busy = true;
-  ui.progress(0, '正在生成行星表面');
+  ui.progress(0, L('正在生成行星表面'));
   const base = settings.tex, jobs = [];
   for (const b of bodies) if (b.def.gen) {
     const [name, k, two] = b.def.gen, w = Math.max(512, base * k);
@@ -935,7 +936,7 @@ function nextStop(step) {
     const dur = Math.min(5.5, 2.4 + camera.position.distanceTo(p.b.pos) / 160);
     focusOn(p.b.id, { dir: p.dir, dist: p.dist, dur, overview: id === 'overview' });
     Object.assign(t, { t: 0, motion: p.motion });
-    ui.onStop({ index: t.i, total: TOUR.length, body: p.b, overview: id === 'overview', fact: fact || p.b.def.desc.split('。')[0] + '。', delay: dur });
+    ui.onStop({ index: t.i, total: TOUR.length, body: p.b, overview: id === 'overview', id, fact, delay: dur });
     return;
   }
 }
@@ -986,7 +987,7 @@ const labelsEl = $('labels');
 for (const b of bodies) {
   b.label = document.createElement('div');
   b.label.className = 'label' + (b.parent ? ' moon' : '');
-  b.label.innerHTML = `<i style="background:${b.def.color}"></i>${b.def.name}`;
+  b.label.innerHTML = `<i style="background:${b.def.color}"></i>${nameOf(b)}`;
   b.label.onclick = () => pick(b.id);
   labelsEl.append(b.label);
 }
@@ -1002,7 +1003,7 @@ function updateLabels() {
     if (show && b === nav.focus && pxR > 70) show = false;
     if (show && occluded(camera.position, b.pos, b)) show = false;
     const x = (p.x * 0.5 + 0.5) * w, y = (-p.y * 0.5 + 0.5) * h + Math.max(pxR, 2) + 8;
-    const lw = b.def.name.length * 13 + 22;
+    const lw = nameOf(b).length * (isEn() ? 7.5 : 13) + 22;
     if (show && placed.some((r) => Math.abs(r[0] - x) < (r[2] + lw) / 2 && Math.abs(r[1] - y) < 18)) show = false;
     if (show) { placed.push([x, y, lw]); b.label.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,0)`; }
     b.label.classList.toggle('on', show);
@@ -1011,18 +1012,23 @@ function updateLabels() {
 }
 
 // 实时数据（信息卡）
-const fmtKm = (km) => (km >= 1e8 ? `${(km / 1e8).toFixed(2)} 亿 km` : `${Math.round(km).toLocaleString('zh-CN')} km`);
-const fmtLight = (s) => (s < 60 ? `${s.toFixed(1)} 秒` : s < 3600 ? `${Math.floor(s / 60)} 分 ${Math.round(s % 60)} 秒` : `${Math.floor(s / 3600)} 时 ${Math.round((s % 3600) / 60)} 分`);
+const fmtKm = (km) => (isEn()
+  ? km >= 1e9 ? `${(km / 1e9).toFixed(2)} billion km` : km >= 1e6 ? `${(km / 1e6).toFixed(1)} million km` : `${Math.round(km).toLocaleString('en-US')} km`
+  : km >= 1e8 ? `${(km / 1e8).toFixed(2)} 亿 km` : `${Math.round(km).toLocaleString('zh-CN')} km`);
+const fmtLight = (s) => {
+  const [S, M, H] = isEn() ? ['s', 'min', 'h'] : ['秒', '分', '时'];
+  return s < 60 ? `${s.toFixed(1)} ${S}` : s < 3600 ? `${Math.floor(s / 60)} ${M} ${Math.round(s % 60)} ${S}` : `${Math.floor(s / 3600)} ${H} ${Math.round((s % 3600) / 60)} ${M}`;
+};
 function liveRows(b) {
-  if (b === system) return bodies.filter((o) => o.def.kind === 'planet').map((o) => [`${o.def.name}距太阳`, `${o.au.length().toFixed(3)} AU`]);
+  if (b === system) return bodies.filter((o) => o.def.kind === 'planet').map((o) => [L('{0}距太阳', nameOf(o)), `${o.au.length().toFixed(3)} AU`]);
   const rows = [], rSun = b.au.length();
-  if (b !== sun) rows.push(['距太阳', `${rSun.toFixed(3)} AU`], ['', fmtKm(rSun * AU_KM)]);
-  if (b === moon) rows.push(['距地球', fmtKm(moon.km)], ['光行时间', fmtLight(moon.km / C_KMS)]);
+  if (b !== sun) rows.push([L('距太阳'), `${rSun.toFixed(3)} AU`], ['', fmtKm(rSun * AU_KM)]);
+  if (b === moon) rows.push([L('距地球'), fmtKm(moon.km)], [L('光行时间'), fmtLight(moon.km / C_KMS)]);
   else if (b !== earth) {
     const de = tmp.subVectors(b.au, earth.au).length();
-    rows.push(['距地球', `${de.toFixed(3)} AU`], ['光行时间', fmtLight((de * AU_KM) / C_KMS)]);
+    rows.push([L('距地球'), `${de.toFixed(3)} AU`], [L('光行时间'), fmtLight((de * AU_KM) / C_KMS)]);
   }
-  if (b.a) rows.push(['轨道速度', `${(29.7847 * Math.sqrt(2 / rSun - 1 / b.a)).toFixed(2)} km/s`]);
+  if (b.a) rows.push([L('轨道速度'), `${(29.7847 * Math.sqrt(2 / rSun - 1 / b.a)).toFixed(2)} km/s`]);
   return rows;
 }
 // 彗星下次过近日点的时刻（毫秒）
@@ -1085,7 +1091,7 @@ function renderStats() {
 // ================================================================ 界面与配乐
 const player = new Player(settings);
 const ui = createUI({
-  bodies, sim, RATES, settings, PRESETS, T_MIN, T_MAX, gpuName, player, liveRows, renderStats, nextPerihelion,
+  bodies, sim, RATES, settings, PRESETS, SYSTEM, T_MIN, T_MAX, gpuName, player, liveRows, renderStats, nextPerihelion,
   KEYS: ['sun', 'mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'moon'],
   focusOn: pick,
   overview: () => { const p = shot('overview', 'overview'); pick('sun', { dir: p.dir, dist: p.dist, overview: true }); },
@@ -1135,7 +1141,7 @@ function loop(now) {
 }
 
 (async function init() {
-  ui.progress(0, '正在载入星表与地图数据');
+  ui.progress(0, L('正在载入星表与地图数据'));
   const [land, milky] = await Promise.all([inflate(__LAND__), inflate(__MILKY__), buildStars(), loadRealTextures()]);
   const mask = new Uint8Array(2048 * 1024);
   for (let i = 0; i < mask.length; i++) mask[i] = ((land[i >> 3] >> (i & 7)) & 1) * 255;

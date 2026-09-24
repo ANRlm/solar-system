@@ -1,4 +1,4 @@
-// 界面流程：全景状态、设置抽屉音频页、快捷键面板、漫游时自动隐藏与恢复
+// 界面流程：全景状态、中英文切换、设置抽屉音频页、快捷键面板、漫游时自动隐藏与恢复
 import { launch, open } from './open.mjs';
 const browser = await launch();
 const page = await browser.newPage();
@@ -13,6 +13,13 @@ await page.evaluate(() => solar.byId.sun.navBtn.click());
 const sun = await state();
 console.log('全景:', ov, ' 点太阳后:', sun);
 if (ov !== '太阳系||true' || sun !== '太阳|太阳|false') { console.error('FAIL 全景状态'); process.exitCode = 1; }
+// 中英文切换：原地重绘，聚焦不变；再切回中文
+await page.keyboard.press('l');
+const en = await page.evaluate(() => [document.getElementById('iName').textContent, document.querySelector('#bTour span:last-child').textContent, document.documentElement.lang].join('|'));
+await page.keyboard.press('l');
+const zh = await page.evaluate(() => [document.getElementById('iName').textContent, document.querySelector('#bTour span:last-child').textContent, document.documentElement.lang].join('|'));
+console.log('英文:', en, ' 切回:', zh);
+if (en !== 'Sun|Tour|en' || zh !== '太阳|漫游|zh-CN') { console.error('FAIL 中英文切换'); process.exitCode = 1; }
 await page.evaluate(() => { document.getElementById('bSettings').click(); document.querySelector('[data-tab=audio]').click(); });
 await new Promise((r) => setTimeout(r, 1200));
 await page.screenshot({ path: '/tmp/ui-audio.png' });
