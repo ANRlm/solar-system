@@ -1,4 +1,4 @@
-// 界面流程：全景状态、中英文切换、搜索、距离工具、星座连线、设置抽屉音频页、快捷键面板、漫游时自动隐藏与恢复
+// 界面流程：全景状态、中英文切换、搜索、距离工具、星座连线、真实比例、设置抽屉音频页、快捷键面板、漫游时自动隐藏与恢复
 import { launch, open } from './open.mjs';
 const browser = await launch();
 const page = await browser.newPage();
@@ -45,6 +45,16 @@ const cOn = await page.evaluate(() => solar.settings.constellations);
 await page.keyboard.press('c');
 console.log('星座开关:', cOn, '→', await page.evaluate(() => solar.settings.constellations));
 if (!cOn) { console.error('FAIL 星座开关'); process.exitCode = 1; }
+// 真实比例：P 切换，过渡约 2.2 秒；地球半径两种比例下都是 1.5，日地距离从约 60 变为约 35,222 单位；再按 P 切回
+const geo = () => page.evaluate(() => [+solar.byId.earth.r.toFixed(3), Math.round(solar.byId.earth.pos.length())]);
+await page.keyboard.press('p');
+await new Promise((r) => setTimeout(r, 3200));
+const real = await geo();
+await page.keyboard.press('p');
+await new Promise((r) => setTimeout(r, 3200));
+const disp = await geo();
+console.log('真实比例 [地球半径, 日地距离]:', real, ' 切回:', disp);
+if (real[0] !== 1.5 || Math.abs(real[1] - 35222) > 700 || disp[0] !== 1.5 || Math.abs(disp[1] - 60) > 2) { console.error('FAIL 真实比例'); process.exitCode = 1; }
 await page.evaluate(() => { document.getElementById('bSettings').click(); document.querySelector('[data-tab=audio]').click(); });
 await new Promise((r) => setTimeout(r, 1200));
 await page.screenshot({ path: '/tmp/ui-audio.png' });

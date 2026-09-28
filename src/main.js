@@ -25,17 +25,33 @@ const frame = () => new Promise((r) => requestAnimationFrame(r));
 const ecl = (x, y, z, o = new V3()) => o.set(x, z, -y);
 const eqv = (x, y, z, o) => ecl(x, y * Math.cos(OBL) + z * Math.sin(OBL), -y * Math.sin(OBL) + z * Math.cos(OBL), o);
 const radec = (ra, dec, o = new V3()) => eqv(Math.cos(dec) * Math.cos(ra), Math.cos(dec) * Math.sin(ra), Math.sin(dec), o);
-// 展示尺度：距离按幂律压缩、半径放大，否则行星在画面里不到一个像素
-const compress = (au) => 60 * Math.pow(au, 0.55);
-const dispR = (km) => 1.5 * Math.pow(km / 6371, 0.55);
+// 两种比例，k = 0 展示比例：距离按幂律压缩、半径放大，否则行星在画面里不到一个像素；
+// k = 1 真实比例：距离与大小同一比例（地球半径两种模式下都是 1.5 单位，1 AU ≈ 35,222 单位）。
+// 切换时 k 在 0–1 之间过渡，所有长度在对数空间插值，画面连续变形
+const KMU = 1.5 / 6371, REAL_AU = AU_KM * KMU;
+const scale = { k: 0, p: 0, target: 0, dirty: false };
+const mixLog = (a, b) => (scale.k <= 0 ? a : scale.k >= 1 ? b : Math.exp(Math.log(Math.max(a, 1e-12)) * (1 - scale.k) + Math.log(Math.max(b, 1e-12)) * scale.k));
+const compress = (au) => mixLog(60 * Math.pow(au, 0.55), REAL_AU * au);
+const dispR0 = (km) => 1.5 * Math.pow(km / 6371, 0.55);
+const dispR = (km) => mixLog(dispR0(km), km * KMU);
+const sunR = () => mixLog(SUN_R, 696340 * KMU);
+// 卫星到母星中心的距离：展示比例为母星半径的倍数，真实比例为轨道半长轴
+const moonDist = (b, km = b.def.a || 384400) => mixLog(b.def.dist * dispR0(b.parent.def.km), km * KMU);
+// 相机离母星多近时才显示卫星的标签与轨道
+const moonZone = (b) => mixLog(dispR0(b.parent.def.km) * (b.def.parent === 'earth' ? 70 : 45), (b.def.a || 384400) * KMU * 12);
+const overviewDist = () => 1.95 * compress(30);
 const toScene = (au, o) => { const r = au.length(); return o.copy(au).multiplyScalar(compress(r) / r); };
 
-function kepler(a, e, I, O, w, M, o) {
-  // 彗星偏心率接近 1：从 M + e·sinM 起步的牛顿迭代在近日点附近发散，E 跳到错误位置，彗星会闪现到内太阳系一帧
-  // 改用 Danby 初值 E0 = M + 0.85e·sgn(sinM)（对任意 e<1 收敛），并迭代到收敛
+// 开普勒方程 M = E − e·sinE。彗星偏心率接近 1：从 M + e·sinM 起步的牛顿迭代在近日点附近发散，E 跳到错误位置，彗星会闪现到内太阳系一帧
+// 改用 Danby 初值 E0 = M + 0.85e·sgn(sinM)（对任意 e<1 收敛），并迭代到收敛
+function eccAnom(M, e) {
   M -= Math.round(M / (2 * Math.PI)) * 2 * Math.PI;
   let E = M + 0.85 * e * Math.sign(Math.sin(M));
   for (let k = 0, dE = 1; k < 30 && Math.abs(dE) > 1e-12; k++) E -= dE = (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+  return E;
+}
+function kepler(a, e, I, O, w, M, o) {
+  const E = eccAnom(M, e);
   const xp = a * (Math.cos(E) - e), yp = a * Math.sqrt(1 - e * e) * Math.sin(E);
   const cw = Math.cos(w), sw = Math.sin(w), cO = Math.cos(O), sO = Math.sin(O), cI = Math.cos(I), sI = Math.sin(I);
   return ecl((cw * cO - sw * sO * cI) * xp + (-sw * cO - cw * sO * cI) * yp,
@@ -62,7 +78,7 @@ function moonGeo(d, o) {
 const DEFAULT = matchMedia('(pointer: coarse)').matches ? 'medium' : 'high';
 let settings;
 try { settings = JSON.parse(localStorage.getItem('solar.settings')); } catch { settings = null; }
-settings = { preset: DEFAULT, ...PRESETS[DEFAULT], exposure: 1, orbits: true, labels: true, belt: true, music: true, volume: 0.6, adaptive: true, sfx: true, autohide: true, idleTour: true, constellations: false, ...settings };
+settings = { preset: DEFAULT, ...PRESETS[DEFAULT], exposure: 1, orbits: true, labels: true, belt: true, music: true, volume: 0.6, adaptive: true, sfx: true, autohide: true, idleTour: true, constellations: false, realScale: false, ...settings };
 const saveSettings = () => localStorage.setItem('solar.settings', JSON.stringify(settings));
 
 // ================================================================ 渲染器
@@ -74,6 +90,11 @@ const gl = renderer.getContext();
 const maxSamples = gl.getParameter(gl.MAX_SAMPLES) || 4;
 const maxAniso = renderer.capabilities.getMaxAnisotropy();
 const scene = new THREE.Scene();
+// 相机相对渲染：有世界坐标的物体都放进 world；每帧渲染前把相机平移到原点、world 反向平移，
+// 着色器里的位置与 uniform 都相对相机，真实比例下（冥卫一离太阳 50 亿 km、半径 606 km）float32 精度才够用
+const world = new THREE.Group();
+scene.add(world);
+const origin = new THREE.Vector3(), sunRel = new THREE.Vector3();
 const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.002, 30000);
 camera.position.set(-160, 240, 620).multiplyScalar(3.2);
 const controls = new OrbitControls(camera, canvas);
@@ -105,7 +126,7 @@ function planetMaterial(def) {
     vertexShader: S.PLANET_VERT, fragmentShader: S.PLANET_FRAG, defines,
     uniforms: {
       uMapA: { value: null }, uMapB: { value: null }, uRingTex: { value: null }, uTexel: { value: new THREE.Vector2(1 / 1024, 1 / 512) },
-      uSunPos: { value: new V3() }, uSunCol: { value: SUN_COL }, uSunRel: { value: new V3() }, uSunRn: { value: 1 }, uSunI: { value: SUN_I },
+      uSunPos: { value: sunRel }, uSunCol: { value: SUN_COL }, uSunRel: { value: new V3() }, uSunRn: { value: 1 }, uSunI: { value: SUN_I },
       uRot: { value: new THREE.Matrix3() }, uCenter: { value: new V3() }, uRadius: { value: 1 },
       uBump: { value: def.bump || 0 }, uAmbient: { value: 0.0025 }, uCloudShift: { value: 0 }, uLights: { value: 4 },
       uOcc: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) }, uOccAtm: { value: [0, 0, 0, 0] }, uOccN: { value: 0 },
@@ -167,9 +188,9 @@ for (const def of BODIES) {
   b.PN = new V3().crossVectors(b.P, b.N);
   b.eq.makeBasis(b.N, b.P, new V3().crossVectors(b.N, b.P));
   b.group = new THREE.Group();
-  scene.add(b.group);
+  world.add(b.group);
   if (def.id === 'sun') {
-    b.mat = new THREE.ShaderMaterial({ vertexShader: S.PLANET_VERT, fragmentShader: S.SUN_FRAG, uniforms: { uTime: { value: 0 }, uI: { value: 7 } } });
+    b.mat = new THREE.ShaderMaterial({ vertexShader: S.PLANET_VERT, fragmentShader: S.SUN_FRAG, uniforms: { uTime: { value: 0 }, uI: { value: 7 }, uCenter: { value: new V3() } } });
     const K = 9;
     b.corona = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
       vertexShader: S.CORONA_VERT, fragmentShader: S.CORONA_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -187,7 +208,7 @@ for (const def of BODIES) {
       vertexShader: S.ATMO_VERT, fragmentShader: S.ATMO_FRAG, defines: { STEPS: settings.atmo },
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
       uniforms: {
-        uCenter: { value: b.pos }, uSunPos: { value: new V3() }, uSunCol: { value: SUN_COL },
+        uCenter: { value: new V3() }, uSunPos: { value: sunRel }, uSunCol: { value: SUN_COL },
         uBR: { value: new V3(...a.tauR.map((t) => t / a.hr)) }, uBM: { value: new V3(...a.tauM.map((t) => t / a.hm)) },
         uR: { value: b.r }, uRa: { value: b.r * (1 + a.h) }, uHR: { value: a.hr }, uHM: { value: a.hm }, uG: { value: a.g }, uI: { value: a.I * SUN_I },
       },
@@ -202,7 +223,7 @@ for (const def of BODIES) {
     const tex = ringTexture(def.rings);
     b.ring = new THREE.Mesh(geo, new THREE.ShaderMaterial({
       vertexShader: S.RING_VERT, fragmentShader: S.RING_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide,
-      uniforms: { uRingTex: { value: tex }, uRingR: { value: new THREE.Vector2(r0, r1) }, uSunPos: { value: new V3() }, uSunCol: { value: SUN_COL }, uSunI: { value: SUN_I }, uN: { value: b.P }, uPlanet: { value: new THREE.Vector4() } },
+      uniforms: { uRingTex: { value: tex }, uRingR: { value: new THREE.Vector2(r0, r1) }, uSunPos: { value: sunRel }, uSunCol: { value: SUN_COL }, uSunI: { value: SUN_I }, uN: { value: b.P }, uPlanet: { value: new THREE.Vector4() } },
     }));
     b.ring.scale.setScalar(b.r);
     b.ring.renderOrder = 2;
@@ -237,41 +258,64 @@ function orbitLine(color, n, loop) {
     uniforms: { uPhase: { value: 0 }, uColor: { value: new THREE.Color(color) }, uAlpha: { value: 0.5 }, uRes: { value: orbitRes }, uWidth: orbitWidth },
   }));
   // fn(i, out) 写入第 i 个点，可返回该点的轨道相位（非均匀采样时用于拖尾渐隐）
-  const o = new V3(), tp = new V3(), tn = new V3();
+  // 点的坐标另存一份 float64；写入顶点时减去锚点 anchor（日心轨道的 line.position 放在锚点）。
+  // 真实比例下聚焦天体的轨道锚点在天体上，镜头前的线段就没有 float32 抖动；卫星轨道的锚点恒为 0，position 跟随母星
+  const o = new V3(), tp = new V3(), tn = new V3(), abs = new Float64Array(n * 3);
+  line.anchor = new V3();
+  const writeRel = () => {
+    const pos = geo.attributes.position.array, a = line.anchor;
+    for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) pos[6 * i + k] = pos[6 * i + 3 + k] = abs[3 * i + k] - a.getComponent(k);
+    geo.attributes.position.needsUpdate = true;
+  };
   line.setPoints = (fn) => {
     const pos = geo.attributes.position.array, tan = geo.attributes.aTan.array, ph = geo.attributes.aPhase.array;
     for (let i = 0; i < n; i++) {
       const phase = fn(i, o);
       if (phase !== undefined) ph[2 * i] = ph[2 * i + 1] = phase;
-      o.toArray(pos, 6 * i);
-      o.toArray(pos, 6 * i + 3);
+      o.toArray(abs, 3 * i);
     }
+    writeRel();
     // 切线：前后两点之差（首尾在开放曲线上取单侧差分）
     for (let i = 0; i < n; i++) {
       const p = loop ? (i + n - 1) % n : Math.max(0, i - 1), q = loop ? (i + 1) % n : Math.min(n - 1, i + 1);
-      tn.fromArray(pos, 6 * q).sub(tp.fromArray(pos, 6 * p)).normalize();
+      tn.fromArray(abs, 3 * q).sub(tp.fromArray(abs, 3 * p)).normalize();
       tn.toArray(tan, 6 * i);
       tn.toArray(tan, 6 * i + 3);
     }
     geo.attributes.position.needsUpdate = geo.attributes.aTan.needsUpdate = geo.attributes.aPhase.needsUpdate = true;
   };
   line.frustumCulled = false;
-  scene.add(line);
+  world.add(line);
   return line;
 }
 for (const b of bodies) {
   if (b.def.el) b.orbit = orbitLine(b.def.color, 720, true);
   else if (b.def.kep) b.orbit = orbitLine(b.def.color, 1024, true);
   else if (b.def.sync) {
-    const R = b.def.dist * b.parent.r;
     b.orbit = orbitLine(b.def.color, 256, true);
-    b.orbit.setPoints((i, o) => { const w = (i / 256) * Math.PI * 2; o.set(-Math.cos(w) * R, 0, Math.sin(w) * R); });
+    fillMoonOrbit(b);
     b.orbit.quaternion.setFromRotationMatrix(b.eq);
   } else if (b === moon) b.orbit = orbitLine(b.def.color, 200, false);
 }
-function fillPlanetOrbit(b, T) {
+// 同步卫星的轨道圆（在母星赤道面内，随母星平移）
+function fillMoonOrbit(b) {
+  const R = moonDist(b);
+  b.orbit.setPoints((i, o) => { const w = (i / 256) * Math.PI * 2; o.set(-Math.cos(w) * R, 0, Math.sin(w) * R); });
+}
+// 真实比例下海王星轨道周长约 660 万单位，720 个点每段约 9,000 单位，弦与真实轨道的偏差（约 10 单位）比海王星还大，
+// 轨道线会偏离天体中心、从镜头旁穿过。聚焦天体的轨道改为在天体附近按 |v|³ 加密采样，锚点放在天体上
+const warp = (i, n) => { const v = (2 * i) / n - 1; return Math.PI * Math.sign(v) * Math.abs(v) ** 3; };
+const denseOrbit = (b) => scale.k > 0.5 && (b === nav.focus || b === nav.focus?.parent);
+const phaseOf = (M) => (((M / (Math.PI * 2)) % 1) + 1) % 1;
+function fillPlanetOrbit(b, T, dense) {
   const el = elements(b.def.el, T);
-  b.orbit.setPoints((i, o) => { toScene(kepler(el.a, el.e, el.I, el.O, el.w, (i / 720) * Math.PI * 2, tmp), o); });
+  if (dense) b.orbit.anchor.copy(b.pos);
+  b.orbit.position.copy(b.orbit.anchor);
+  b.orbit.setPoints((i, o) => {
+    const M = dense ? el.M + warp(i, 720) : (i / 720) * Math.PI * 2;
+    toScene(kepler(el.a, el.e, el.I, el.O, el.w, M, tmp), o);
+    return phaseOf(M);
+  });
   b.orbitT = T;
 }
 // 彗发（面向相机的光斑，向阳侧有喷流）+ 离子尾（背向太阳的主尾与张开的射线，蓝）
@@ -304,13 +348,13 @@ for (const b of bodies) if (b.def.kind === 'comet') {
     uniforms: { uSize: { value: 1 }, uLift: { value: b.r * 1.5 }, uI: { value: 0 }, uTime: { value: 0 }, uSunward: { value: new V3() } },
   })));
   b.group.add(b.coma);
-  const shared = { uP0: { value: b.pos }, uAway: { value: new V3() }, uBack: { value: new V3() }, uVel: { value: new V3() }, uTime: { value: 0 } };
+  const shared = { uP0: { value: new V3() }, uAway: { value: new V3() }, uBack: { value: new V3() }, uVel: { value: new V3() }, uTime: { value: 0 } };
   b.tails = [[0.3, 0.55, 1], [1, 0.88, 0.7]].map((c, k) => {
     const m = add(new THREE.Mesh(k ? new THREE.PlaneGeometry(1, 1, 1, 64) : ribbons(1 + ION_RAYS), new THREE.ShaderMaterial({
       ...fx, side: THREE.DoubleSide, vertexShader: S.TAIL_VERT, fragmentShader: S.TAIL_FRAG, defines: k ? {} : { ION: 1 },
       uniforms: { ...shared, uLen: { value: 1 }, uCurve: { value: k ? 0.35 : 0 }, uW0: { value: k ? 0.012 : 0.006 }, uW1: { value: k ? 0.16 : 0.05 }, uColor: { value: new THREE.Color(...c) }, uI: { value: 0 } },
     })));
-    scene.add(m);
+    world.add(m);
     return m;
   });
   const du = b.tails[1].material.uniforms;
@@ -318,12 +362,13 @@ for (const b of bodies) if (b.def.kind === 'comet') {
     ...fx, vertexShader: S.DUST_VERT, fragmentShader: S.DUST_FRAG,
     uniforms: { ...shared, uLen: du.uLen, uCurve: du.uCurve, uW1: du.uW1, uColor: du.uColor, uI: { value: 0 }, uPR: cometPR, uRes: { value: orbitRes } },
   })));
-  scene.add(b.dust);
+  world.add(b.dust);
 }
 // 活跃度：随日距急剧下降（约 3 AU 以外几乎没有彗尾），并随彗核大小增强（海尔-波普的彗核直径约 60 km）
 function cometActivity(b) {
   b.act = Math.min(5, Math.pow(1.5 / b.au.length(), 3) * Math.sqrt(b.def.km / 3));
-  b.tailLen = 14 * Math.pow(b.act, 0.6);
+  // 真实比例下彗尾长约 0.3·act^0.6 AU（活跃度封顶时约 0.8 AU，大彗星的彗尾确实有这么长）
+  b.tailLen = mixLog(14, 0.3 * REAL_AU) * Math.pow(b.act, 0.6);
 }
 // 活跃彗星的镜头：从侧面看整条彗尾；取这一侧使彗尾在画面中朝左延伸（右侧是信息卡）
 function cometFrame(b) {
@@ -334,6 +379,7 @@ function updateComets(time) {
   for (const b of bodies) if (b.def.kind === 'comet') {
     const act = b.act, L = b.tailLen, on = act > 0.01;
     const [ion, dust] = b.tails.map((m) => m.material.uniforms);
+    ion.uP0.value.subVectors(b.pos, origin);
     ion.uAway.value.copy(b.pos).normalize();
     ion.uBack.value.copy(b.vel).negate().addScaledVector(ion.uAway.value, b.vel.dot(ion.uAway.value)).normalize();
     ion.uVel.value.copy(b.vel);
@@ -348,7 +394,7 @@ function updateComets(time) {
     b.tails.forEach((m) => (m.visible = on));
     b.dust.visible = on;
     const cu = b.coma.material.uniforms;
-    cu.uSize.value = 0.15 + 0.8 * I;
+    cu.uSize.value = mixLog(1, REAL_AU / 33) * (0.15 + 0.8 * I);
     cu.uI.value = 0.08 + 0.4 * I;
     cu.uTime.value = time;
     cu.uSunward.value.copy(ion.uAway.value).negate();
@@ -359,12 +405,14 @@ function kepElements(c) {
   const [q, e, i, O, w, tp] = c, a = q / (1 - e);
   return { a, e, I: i * DEG, O: O * DEG, w: w * DEG, n: (0.9856076686 / Math.pow(a, 1.5)) * DEG, tp: tp - 2451545 };
 }
-function fillKepOrbit(b) {
-  const el = kepElements(b.def.kep);
+function fillKepOrbit(b, dense, d) {
+  const el = kepElements(b.def.kep), E0 = dense ? eccAnom(el.n * (d - el.tp), el.e) : 0;
+  if (dense) b.orbit.anchor.copy(b.pos);
+  b.orbit.position.copy(b.orbit.anchor);
   b.orbit.setPoints((i, o) => {
-    const E = (i / 1024) * Math.PI * 2, M = E - el.e * Math.sin(E);
+    const E = dense ? E0 + warp(i, 1024) : (i / 1024) * Math.PI * 2, M = E - el.e * Math.sin(E);
     toScene(kepler(el.a, el.e, el.I, el.O, el.w, M, tmp), o);
-    return M / (Math.PI * 2);
+    return phaseOf(M);
   });
   b.orbitT = 0;
 }
@@ -397,13 +445,13 @@ function makeBelt(max, orbitOf, tintA, tintB) {
   geo.setAttribute('aTone', new THREE.InstancedBufferAttribute(tone, 1));
   const mesh = new THREE.Mesh(geo, new THREE.ShaderMaterial({
     vertexShader: S.ROCK_VERT, fragmentShader: S.ROCK_FRAG,
-    uniforms: { uDays: { value: 0 }, uDayFrac: { value: 0 }, uPx: { value: 0.001 }, uSunCol: { value: SUN_COL }, uSunI: { value: SUN_I }, uTintA: { value: new THREE.Color(...tintA) }, uTintB: { value: new THREE.Color(...tintB) } },
+    uniforms: { uDays: { value: 0 }, uDayFrac: { value: 0 }, uPx: { value: 0.001 }, uScaleK: { value: 0 }, uAU: { value: REAL_AU }, uOrigin: { value: origin }, uSunCol: { value: SUN_COL }, uSunI: { value: SUN_I }, uTintA: { value: new THREE.Color(...tintA) }, uTintB: { value: new THREE.Color(...tintB) } },
   }));
   // 按覆盖率做 alpha 混合：放大到最小像素尺寸的远处碎石不会在太阳辉光前形成黑点
   Object.assign(mesh.material, { transparent: true, depthWrite: false });
   mesh.renderOrder = 5;
   mesh.frustumCulled = false;
-  scene.add(mesh);
+  scene.add(mesh); // 着色器里自己减去渲染原点，不放进 world
   return mesh;
 }
 const LJ = 34.39644 * DEG;
@@ -661,7 +709,7 @@ const daysOf = (t) => t / 864e5 + 2440587.5 - 2451545;
 const SPIN_CAP = Math.PI; // 弧度/秒，即每秒最多半圈
 function visualDays(b, d, step, dt, jump) {
   // 卫星由 W 驱动公转：再限制为每秒最多移动 12 个自身半径，否则内侧小卫星每帧跳过好几个直径，看起来是一闪一闪的白点
-  const cap = b.parent ? Math.min(SPIN_CAP, (12 * b.r) / (b.def.dist * b.parent.r)) : SPIN_CAP;
+  const cap = b.parent ? Math.min(SPIN_CAP, (12 * b.r) / moonDist(b)) : SPIN_CAP;
   const w = Math.abs(b.def.W[1]) * DEG, max = (cap / w) * dt;
   if (jump || b.tv === undefined) return (b.tv = d);
   if (Math.abs(step) > max) return (b.tv += Math.sign(step) * max);
@@ -696,7 +744,10 @@ function updateBodies(d, step = 0, dt = 0, jump = true) {
       toScene(b.au, b.pos);
       b.phase = el.M / (Math.PI * 2);
       b.a = el.a;
-      if (b.orbitT === undefined || Math.abs(T - b.orbitT) > 0.05) fillPlanetOrbit(b, T);
+      // 加密采样的轨道每帧跟着天体重建（只有聚焦天体一两条）；取消加密后再按普通方式重建一次
+      const dense = denseOrbit(b);
+      if (b.orbitT === undefined || Math.abs(T - b.orbitT) > 0.05 || scale.dirty || dense || b.wasDense) fillPlanetOrbit(b, T, dense);
+      b.wasDense = dense;
     } else if (b.def.kep) {
       const el = kepElements(b.def.kep), M = el.n * (d - el.tp);
       kepler(el.a, el.e, el.I, el.O, el.w, M, b.au);
@@ -706,15 +757,18 @@ function updateBodies(d, step = 0, dt = 0, jump = true) {
       // 速度方向（数值差分），用于尘埃尾的弯曲
       b.vel = (b.vel || new V3()).subVectors(kepler(el.a, el.e, el.I, el.O, el.w, M + el.n * 0.5, tmp), b.au).normalize();
       if (b.def.kind === 'comet') cometActivity(b);
-      if (b.orbitT === undefined) fillKepOrbit(b);
+      const dense = denseOrbit(b);
+      if (b.orbitT === undefined || scale.dirty || dense || b.wasDense) fillKepOrbit(b, dense, d);
+      b.wasDense = dense;
     }
   }
   const km = moonGeo(moon.tv, tmp);
   moon.km = km;
   moon.au.copy(earth.au).addScaledVector(tmp, km / AU_KM);
-  moon.pos.copy(earth.pos).addScaledVector(tmp, moon.def.dist * earth.r);
+  moon.pos.copy(earth.pos).addScaledVector(tmp, moonDist(moon, km));
   for (const b of bodies) if (b.def.sync) {
-    b.pos.copy(b.parent.pos).addScaledVector(b.M, -b.def.dist * b.parent.r);
+    if (scale.dirty) fillMoonOrbit(b);
+    b.pos.copy(b.parent.pos).addScaledVector(b.M, -moonDist(b));
     b.au.copy(b.parent.au);
     b.phase = (((b.def.W[0] + b.def.W[1] * b.tv) % 360) + 360) % 360 / 360;
   }
@@ -722,6 +776,7 @@ function updateBodies(d, step = 0, dt = 0, jump = true) {
     b.group.position.copy(b.pos);
     b.mesh.quaternion.setFromRotationMatrix(b.rot);
   }
+  scale.dirty = false;
 }
 
 // 真实日心位置（km）。日食阴影在真实尺度下计算，否则放大的天体会让日月食每月都发生
@@ -733,11 +788,14 @@ function realKm(b, o) {
 }
 const kmA = new V3(), kmB = new V3();
 function updateUniforms(d, time) {
+  // 渲染原点 = 相机（此时相机位置已是本帧最终值）；所有世界坐标 uniform 都相对它
+  origin.copy(camera.position);
+  sunRel.subVectors(sun.pos, origin);
   for (const b of bodies) {
     const u = b.mat.uniforms;
-    if (b === sun) { u.uTime.value = time; b.corona.material.uniforms.uTime.value = time; continue; }
+    if (b === sun) { u.uTime.value = time; u.uCenter.value.copy(sunRel); b.corona.material.uniforms.uTime.value = time; continue; }
     u.uRot.value.setFromMatrix4(b.rot);
-    u.uCenter.value.copy(b.pos);
+    u.uCenter.value.subVectors(b.pos, origin);
     u.uRadius.value = b.r;
     realKm(b, kmA);
     u.uSunRel.value.copy(kmA).negate().divideScalar(b.def.km);
@@ -748,22 +806,24 @@ function updateUniforms(d, time) {
       u.uOcc.value[i].set(kmB.x, kmB.y, kmB.z, o.def.km / b.def.km);
       u.uOccAtm.value[i] = o === earth ? 1 : 0;
     });
-    if (b.ring) b.ring.material.uniforms.uPlanet.value.set(b.pos.x, b.pos.y, b.pos.z, b.r);
+    if (b.ring) b.ring.material.uniforms.uPlanet.value.set(b.pos.x - origin.x, b.pos.y - origin.y, b.pos.z - origin.z, b.r);
+    if (b.atm) b.atm.material.uniforms.uCenter.value.subVectors(b.pos, origin);
     if (b.atm) b.atm.material.side = camera.position.distanceTo(b.pos) < b.r * (1 + b.def.atm.h) ? THREE.BackSide : THREE.FrontSide;
   }
   earth.mat.uniforms.uCloudShift.value = (d * 0.011) % 1;
   // 地照：从月球看到的地球被照亮的比例
   const lit = 0.5 * (1 + tmp.copy(earth.pos).negate().normalize().dot(tmp2.subVectors(moon.pos, earth.pos).normalize()));
-  moon.mat.uniforms.uShinePos.value.copy(earth.pos);
+  moon.mat.uniforms.uShinePos.value.subVectors(earth.pos, origin);
   moon.mat.uniforms.uShineCol.value.setRGB(0.3, 0.42, 0.62).multiplyScalar(0.035 * lit * SUN_I);
   for (const m of [belt, kuiper]) {
+    m.material.uniforms.uScaleK.value = scale.k;
     m.material.uniforms.uDays.value = d;
     m.material.uniforms.uDayFrac.value = d - Math.floor(d);
     m.visible = settings.belt;
   }
   // 轨道线
   for (const b of bodies) if (b.orbit) {
-    const near = !b.parent || camera.position.distanceTo(b.parent.pos) < b.parent.r * (b.parent === earth ? 70 : 45);
+    const near = !b.parent || camera.position.distanceTo(b.parent.pos) < moonZone(b);
     b.orbit.visible = settings.orbits && near;
     // 漫游时淡化轨道线，让画面更干净
     b.orbit.material.uniforms.uAlpha.value = (nav.focus === b ? 0.9 : b.parent ? 0.35 : 0.45) * (nav.tour ? 0.4 : 1);
@@ -771,9 +831,60 @@ function updateUniforms(d, time) {
     if (b.def.sync) b.orbit.position.copy(b.parent.pos);
   }
   if (moon.orbit.visible) {
-    moon.orbit.setPoints((i, o) => { moonGeo(moon.tv - 27.32 * (1 - i / 199), o); o.multiplyScalar(moon.def.dist * earth.r); });
+    moon.orbit.setPoints((i, o) => { const km = moonGeo(moon.tv - 27.32 * (1 - i / 199), o); o.multiplyScalar(moonDist(moon, km)); });
     moon.orbit.position.copy(earth.pos);
     moon.orbit.material.uniforms.uPhase.value = 0.9999;
+  }
+}
+
+// ================================================================ 比例切换（展示比例 ⇄ 真实比例）
+// 各天体半径、光环、大气、彗发随 k 更新；卫星轨道圆与日心轨道线在 updateBodies 里按 scale.dirty 重建
+function applyRadii() {
+  for (const b of bodies) {
+    b.r = b === sun ? sunR() : dispR(b.def.km);
+    b.mesh.scale.setScalar(b.r);
+    if (b.atm) {
+      const h = b.def.atm.h, u = b.atm.material.uniforms;
+      b.atm.scale.setScalar(b.r * (1 + h));
+      u.uR.value = b.r;
+      u.uRa.value = b.r * (1 + h);
+    }
+    if (b.ring) b.ring.scale.setScalar(b.r);
+    if (b.coma) b.coma.material.uniforms.uLift.value = b.r * 1.5;
+  }
+  sun.corona.material.uniforms.uSize.value = sun.r * 9;
+  if (nav.focus) controls.minDistance = nav.focus.r * (nav.focus === sun ? 1.4 : 1.12);
+  scale.dirty = true;
+}
+// 镜头构图的参照长度：全景看整个太阳系，否则看聚焦天体的半径；切换时镜头按它的比值缩放，构图保持不变
+const scaleRef = () => (nav.overview || !nav.focus ? overviewDist() : nav.focus.r);
+function setScale(real) {
+  scale.target = real ? 1 : 0;
+  // 飞行中的路径按旧比例计算，直接落到终点
+  const f = nav.flight;
+  if (f) {
+    camera.position.copy(f.b.pos).add(f.off);
+    controls.target.copy(f.b.pos);
+    nav.flight = null;
+    controls.enabled = true;
+  }
+}
+// 每帧推进过渡（约 2.2 秒），返回参照长度的变化比例
+function stepScale(dt) {
+  if (scale.p === scale.target) return 1;
+  const ref0 = scaleRef();
+  scale.p = scale.target > scale.p ? Math.min(1, scale.p + dt / 2.2) : Math.max(0, scale.p - dt / 2.2);
+  scale.k = ease(scale.p);
+  applyRadii();
+  return scaleRef() / ref0;
+}
+// 真实比例下，远处的行星、矮行星与太阳小于一个像素：网格至少画到约 1 像素，才看得见一个亮点
+function minPixelSize() {
+  const px = (2 * Math.tan((camera.fov * DEG) / 2)) / innerHeight;
+  for (const b of bodies) {
+    if (b.parent || b.def.kind === 'comet') continue;
+    const r = Math.max(b.r, px * camera.position.distanceTo(b.pos) * (b === sun ? 1.6 : 0.9) * scale.k);
+    b.mesh.scale.setScalar(r);
   }
 }
 
@@ -798,12 +909,12 @@ function updateSunFx(dt) {
   const p = sunNdc.set(0, 0, 0).project(camera);
   sunUV.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5);
   const dist = camera.position.length();
-  const frac = SUN_R / dist / Math.tan((camera.fov * DEG) / 2);
+  const frac = sun.r / dist / Math.tan((camera.fov * DEG) / 2);
   let vis = 0, onScreen = 0;
   if (camDir.dot(tmp2.copy(camera.position).negate()) > 0) {
     const pt = new V3();
     for (let k = 0; k < 19; k++) {
-      const a = (k / 12) * Math.PI * 2 + (k >= 12 ? 0.3 : 0), r = k === 18 ? 0 : SUN_R * (k < 12 ? 0.85 : 0.45);
+      const a = (k / 12) * Math.PI * 2 + (k >= 12 ? 0.3 : 0), r = k === 18 ? 0 : sun.r * (k < 12 ? 0.85 : 0.45);
       pt.copy(camRight).multiplyScalar(Math.cos(a) * r).addScaledVector(camUp, Math.sin(a) * r);
       if (!occluded(camera.position, pt, sun)) vis += 1 / 19;
     }
@@ -823,7 +934,7 @@ function updateSunFx(dt) {
   }
   occ.sort((a, b) => b[2] - a[2]);
   u.uOccl.value.forEach((v, i) => (occ[i] ? v.set(...occ[i]) : v.set(0, 0, 0)));
-  u.uSunVis.value = sunVis * (1 - smooth(0.2, 0.6, frac)) * smooth(0.004, 0.02, frac);
+  u.uSunVis.value = sunVis * (1 - smooth(0.2, 0.6, frac)) * Math.max(smooth(0.004, 0.02, frac), 0.6 * scale.k);
   // 太阳在镜头后方时投影点会镜像到画面内，必须关掉；离画面较远时贡献也可忽略，整个跳过以省下三次全屏渲染
   const inFront = camDir.dot(tmp2.copy(camera.position).negate()) > 0;
   const nearView = inFront ? 1 - smooth(1.2, 2.2, Math.max(Math.abs(p.x), Math.abs(p.y))) : 0;
@@ -846,16 +957,18 @@ function focusOn(id, opt = {}) {
   const b = byId[id];
   if (b.def.kind === 'comet' && b.act > 0.05 && !opt.dir && !opt.dist) opt = { ...cometFrame(b), ...opt };
   // 竖屏时水平视角很窄，按宽高比拉远，保证天体完整入镜
-  const dist = (opt.dist || (b === sun ? 52 : b.r * (b.def.view || 4.4))) * Math.max(1, 0.95 / camera.aspect);
+  const dist = (opt.dist || (b === sun ? sun.r * 7.4 : b.r * (b.def.view || 4.4))) * Math.max(1, 0.95 / camera.aspect);
   const toSun = b === sun ? new V3(0.35, 0.3, 1).normalize() : tmp.copy(b.pos).negate().normalize().clone();
   // opt.geo = [纬度, 经度]：镜头正对天体表面该点（如日食的食甚点）
   // geoTilt：绕竖直轴偏开若干度，避免月球这类前景天体挡住镜头
   const geoDir = opt.geo && new V3(Math.cos(opt.geo[1] * DEG) * Math.cos(opt.geo[0] * DEG), Math.sin(opt.geo[0] * DEG), -Math.sin(opt.geo[1] * DEG) * Math.cos(opt.geo[0] * DEG)).applyMatrix4(b.rot).applyAxisAngle(UP, (opt.geoTilt || 0) * DEG);
   const dir = opt.dir || geoDir || toSun.applyAxisAngle(UP, opt.angle ?? 0.95).addScaledVector(UP, 0.3).normalize();
   const from = camera.position.clone();
-  const dur = opt.dur || Math.min(5.5, 2 + from.distanceTo(b.pos) / 160);
   const off = dir.multiplyScalar(dist);
-  nav.flight = { b, from, fromT: controls.target.clone(), off, t: 0, dur, lift: flightLift(from, tmp.copy(b.pos).add(off), b) };
+  // 真实比例下距离跨越好几个数量级：直线飞行会在最后几帧才从一个点猛然放大，改为“拉远—平移—推近”的对数缩放
+  const log = scale.k > 0.5 && zoomPath(from.distanceTo(controls.target), dist, controls.target.distanceTo(b.pos));
+  const dur = opt.dur || (log ? Math.min(7, Math.max(2.5, 2.2 + 0.2 * log.S)) : Math.min(5.5, 2 + from.distanceTo(b.pos) / 160));
+  nav.flight = { b, from, fromT: controls.target.clone(), off, t: 0, dur, log, lift: log ? new V3() : flightLift(from, tmp.copy(b.pos).add(off), b) };
   nav.focus = b;
   nav.overview = !!opt.overview;
   controls.enabled = false;
@@ -864,6 +977,19 @@ function focusOn(id, opt = {}) {
   ui.onFocus(card);
   player.mood(card.id);
   if (from.distanceTo(b.pos) > dist * 3) player.whoosh(dur);
+}
+// 真实比例下距离跨越好几个数量级，直线飞行会在最后几帧才从一个点猛然放大。
+// 改用 van Wijk & Nuij（2003）的平滑缩放平移路径（即 d3.interpolateZoom）：视野宽度 w 与目标沿路径的进度 u 联动，
+// 远距离时先拉远、再平移、最后推近，感知速度恒定。w 取镜头到目标的距离，d 为两目标间距
+const RHO = 1.4;
+function zoomPath(w0, w1, d) {
+  if (d < 1e-6 * Math.max(w0, w1)) {
+    const S = Math.log(w1 / w0) / RHO;
+    return { S: Math.abs(S), at: (s) => [s / Math.max(Math.abs(S), 1e-9), w0 * Math.exp(RHO * s * Math.sign(S || 1))] };
+  }
+  const r2 = RHO * RHO, b0 = (w1 * w1 - w0 * w0 + r2 * r2 * d * d) / (2 * w0 * r2 * d), b1 = (w1 * w1 - w0 * w0 - r2 * r2 * d * d) / (2 * w1 * r2 * d);
+  const q0 = Math.log(Math.sqrt(b0 * b0 + 1) - b0), q1 = Math.log(Math.sqrt(b1 * b1 + 1) - b1), S = (q1 - q0) / RHO, c0 = Math.cosh(q0);
+  return { S, at: (s) => [(w0 / (r2 * d)) * (c0 * Math.tanh(RHO * s + q0) - Math.sinh(q0)), (w0 * c0) / Math.cosh(RHO * s + q0)] };
 }
 // 飞行路径 P(e) = lerp(起点, 终点, e) + lift·sin(πe)。默认向上抬起一段弧；若途中离某个天体太近，
 // 就沿垂直于路径的方向把 lift 推离它，避免镜头贴着卫星掠过（大圆盘在一两帧内扫过画面，形同闪屏）
@@ -895,8 +1021,15 @@ function updateCamera(dt) {
   if (f) {
     f.t = Math.min(1, f.t + dt / f.dur);
     const e = ease(f.t), end = tmp.copy(f.b.pos).add(f.off);
-    camera.position.lerpVectors(f.from, end, e).addScaledVector(f.lift, Math.sin(Math.PI * e));
-    controls.target.lerpVectors(f.fromT, f.b.pos, ease(Math.min(1, f.t * 1.35)));
+    if (f.log) {
+      const [u, w] = f.log.at(e * f.log.S);
+      controls.target.lerpVectors(f.fromT, f.b.pos, Math.min(1, Math.max(0, u)));
+      const dir = tmp2.subVectors(f.from, f.fromT).normalize().lerp(fq.copy(f.off).normalize(), e).normalize();
+      camera.position.copy(controls.target).addScaledVector(dir, w);
+    } else {
+      camera.position.lerpVectors(f.from, end, e).addScaledVector(f.lift, Math.sin(Math.PI * e));
+      controls.target.lerpVectors(f.fromT, f.b.pos, ease(Math.min(1, f.t * 1.35)));
+    }
     camera.lookAt(controls.target);
     if (f.t >= 1) {
       nav.flight = null;
@@ -935,7 +1068,7 @@ function shot(id, kind) {
   if (!b) return null;
   const toSun = b === sun ? new V3(0.35, 0.3, 1).normalize() : b.pos.clone().negate().normalize();
   const around = (deg, elev) => toSun.clone().applyAxisAngle(UP, deg * DEG).addScaledVector(UP, elev).normalize();
-  const base = b === sun ? 52 : b.r * (b.def.view || 4.4);
+  const base = b === sun ? sun.r * 7.4 : b.r * (b.def.view || 4.4);
   switch (kind) {
     case 'push': return { b, dir: around(40, 0.2), dist: base * 1.7, motion: { orbit: 1.5, push: 0.96 } };
     case 'crescent': return { b, dir: around(118, 0.22), dist: base * 1.05, motion: { orbit: 1.6 } };
@@ -952,7 +1085,7 @@ function shot(id, kind) {
       return { b, dir: out.applyAxisAngle(UP, 26 * DEG).addScaledVector(UP, 0.12).normalize(), dist: b.r * 5.5, motion: { orbit: 1.1 } };
     }
     case 'comet': return { b, ...cometFrame(b), motion: { orbit: 1 } };
-    case 'overview': return { b: sun, dir: new V3(-0.25, 0.55, 1).normalize(), dist: 760, motion: { orbit: 1.2 } };
+    case 'overview': return { b: sun, dir: new V3(-0.25, 0.55, 1).normalize(), dist: overviewDist(), motion: { orbit: 1.2 } };
     default: return { b, dir: around(55, 0.3), dist: base, motion: { orbit: 3 } };
   }
 }
@@ -962,10 +1095,10 @@ function nextStop(step) {
     t.i = (t.i + step + TOUR.length) % TOUR.length;
     const [id, kind, fact] = TOUR[t.i], p = shot(id, kind);
     if (!p) continue;
-    const dur = Math.min(5.5, 2.4 + camera.position.distanceTo(p.b.pos) / 160);
+    const dur = scale.k > 0.5 ? undefined : Math.min(5.5, 2.4 + camera.position.distanceTo(p.b.pos) / 160);
     focusOn(p.b.id, { dir: p.dir, dist: p.dist, dur, overview: id === 'overview' });
     Object.assign(t, { t: 0, motion: p.motion });
-    ui.onStop({ index: t.i, total: TOUR.length, body: p.b, overview: id === 'overview', id, fact, delay: dur });
+    ui.onStop({ index: t.i, total: TOUR.length, body: p.b, overview: id === 'overview', id, fact, delay: nav.flight.dur });
     return;
   }
 }
@@ -1049,7 +1182,7 @@ function updateConstellations() {
 const distLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new V3(), new V3()]), new THREE.LineDashedMaterial({ color: 0xffd9a0, dashSize: 1, gapSize: 1, transparent: true, opacity: 0.9, depthWrite: false }));
 distLine.frustumCulled = false;
 distLine.visible = false;
-scene.add(distLine);
+world.add(distLine);
 const distTag = document.createElement('div');
 distTag.className = 'dtag';
 labelsEl.append(distTag);
@@ -1063,8 +1196,9 @@ function updateDistance() {
   distTag.classList.toggle('on', !!pair);
   if (!pair) return;
   const [a, b] = pair, p = distLine.geometry.attributes.position;
-  p.setXYZ(0, a.pos.x, a.pos.y, a.pos.z);
-  p.setXYZ(1, b.pos.x, b.pos.y, b.pos.z);
+  distLine.position.copy(a.pos);
+  p.setXYZ(0, 0, 0, 0);
+  p.setXYZ(1, b.pos.x - a.pos.x, b.pos.y - a.pos.y, b.pos.z - a.pos.z);
   p.needsUpdate = true;
   distLine.computeLineDistances();
   const len = a.pos.distanceTo(b.pos);
@@ -1084,13 +1218,16 @@ function updateLabels() {
     const p = tmp.copy(b.pos).project(camera);
     const pxR = (b.r / (d * th)) * (h / 2);
     let show = settings.labels && p.z < 1 && Math.abs(p.x) < 1.1 && Math.abs(p.y) < 1.1;
-    if (show && b.parent) show = camera.position.distanceTo(b.parent.pos) < b.parent.r * (b.parent === earth ? 70 : 45);
+    if (show && b.parent) show = camera.position.distanceTo(b.parent.pos) < moonZone(b);
     if (show && b === nav.focus && pxR > 70) show = false;
     if (show && occluded(camera.position, b.pos, b)) show = false;
-    const x = (p.x * 0.5 + 0.5) * w, y = (-p.y * 0.5 + 0.5) * h + Math.max(pxR, 2) + 8;
-    const lw = nameOf(b).length * (isEn() ? 7.5 : 13) + 22;
-    if (show && placed.some((r) => Math.abs(r[0] - x) < (r[2] + lw) / 2 && Math.abs(r[1] - y) < 18)) show = false;
-    if (show) { placed.push([x, y, lw]); b.label.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,0)`; }
+    const pin = scale.k > 0.5 && pxR < 3;
+    const x = (p.x * 0.5 + 0.5) * w, y = (-p.y * 0.5 + 0.5) * h + (pin ? 0 : Math.max(pxR, 2) + 8);
+    const lw = nameOf(b).length * (isEn() ? 7.5 : 13) + 22, cx = pin ? x - 9.5 + lw / 2 : x;
+    if (show && placed.some((r) => Math.abs(r[0] - cx) < (r[2] + lw) / 2 && Math.abs(r[1] - y) < 18)) show = false;
+    // 钉住时标签左侧圆点（距左缘 9.5px）对准天体
+    if (show) { placed.push([cx, y, lw]); b.label.style.transform = pin ? `translate(${(x - 9.5).toFixed(1)}px,${y.toFixed(1)}px) translate(0,-50%)` : `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,0)`; }
+    b.label.classList.toggle('pin', pin);
     b.label.classList.toggle('on', show);
     b.labelHidden = !show;
   }
@@ -1144,6 +1281,7 @@ function applySettings(prev) {
   else if (ch('scale') || ch('pr')) resize();
   applyFx();
   if (ch('tex')) generateTextures();
+  if (ch('realScale')) setScale(settings.realScale);
   saveSettings();
   player.sync();
   ui.sync();
@@ -1206,15 +1344,24 @@ function loop(now) {
   const d = daysOf(sim.t);
   // 非连续的时间变化（跳转日期、回到现在）直接同步视觉时间
   const step = lastD === null ? 0 : d - lastD, expected = sim.paused ? 0 : (dt * RATES[sim.ri][0]) / 86400;
+  const ratio = stepScale(dt);
   updateBodies(d, step, dt, lastD === null || Math.abs(step) > expected * 2 + 1e-6);
   lastD = d;
   updateCamera(dt);
+  if (ratio !== 1) camera.position.sub(controls.target).multiplyScalar(ratio).add(controls.target);
+  // 近裁剪面随离最近天体表面的距离收缩（真实比例下火卫一半径只有 0.0026 单位）；对数深度下精度只取决于远裁剪面
+  let near = Infinity;
+  for (const b of bodies) near = Math.min(near, camera.position.distanceTo(b.pos) - b.r);
+  camera.near = Math.min(0.002, Math.max(1e-6, near * 0.1));
+  camera.far = mixLog(30000, 5e7);
+  controls.maxDistance = mixLog(3000, 4e6);
   // 画面构图避让界面：平移投影中心，使聚焦天体位于未被遮挡区域的中央
   view.x += (-ui.safe.dx - view.x) * Math.min(1, dt * 3);
   view.y += (-ui.safe.dy - view.y) * Math.min(1, dt * 3);
   camera.setViewOffset(innerWidth, innerHeight, view.x, view.y, innerWidth, innerHeight);
   camera.updateMatrixWorld();
   updateUniforms(d, now / 1000);
+  if (scale.k > 0) minPixelSize();
   updateComets(now / 1000);
   updateSunFx(dt);
   finalPass.uniforms.uTime.value = now / 1000;
@@ -1224,7 +1371,13 @@ function loop(now) {
   ui.frame(now, dt);
   player.brightness(sunClose);
   renderer.info.reset();
+  // 相机相对渲染：相机临时移到原点，world 反向平移；渲染后恢复，其余逻辑都用绝对坐标
+  world.position.copy(origin).negate();
+  camera.position.sub(origin);
+  camera.updateMatrixWorld();
   composer.render(dt);
+  camera.position.add(origin);
+  camera.updateMatrixWorld();
   window.__afterRender?.(); // 仅供自动化测试（逐帧检测）使用
 }
 
@@ -1238,6 +1391,11 @@ function loop(now) {
   buildComposer();
   addEventListener('resize', resize);
   applyFx();
+  if (settings.realScale) {
+    scale.k = scale.p = scale.target = 1;
+    applyRadii();
+    camera.position.normalize().multiplyScalar(overviewDist() * 3.2);
+  }
   updateBodies(daysOf(sim.t));
   controls.target.set(0, 0, 0);
   camera.lookAt(0, 0, 0);

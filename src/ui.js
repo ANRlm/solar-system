@@ -23,6 +23,7 @@ const LINE = {
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
   ruler: '<path d="M3.5 16.5l13-13 4 4-13 13z"/><path d="M7.2 12.8l1.8 1.8M10 10l1.8 1.8M12.8 7.2l1.8 1.8"/>',
   swap: '<path d="M7 4v16M4 17l3 3 3-3M17 20V4M14 7l3-3 3 3"/>',
+  scale: '<circle cx="15" cy="12" r="6.5"/><circle cx="4.5" cy="12" r="1.6"/><path d="M6.6 12h1.6M10 12h.8" stroke-dasharray="1.6 1.4"/>',
 };
 const SOLID = {
   rewind: '<path d="M11 6.5v11L3.5 12zM20.5 6.5v11L13 12z"/>',
@@ -274,6 +275,7 @@ export function createUI(app) {
     if (k === 'music' && el.checked) app.player.unlock();
     app.setSetting({ [k]: el.checked }, QUALITY_KEYS.includes(k));
     if (k === 'adaptive' && focus) app.player.mood(focus.id);
+    if (k === 'realScale') scaleToast();
   }));
 
   function sync() {
@@ -288,6 +290,7 @@ export function createUI(app) {
     $('vVolume').textContent = `${Math.round(settings.volume * 100)}%`;
     drawer.querySelectorAll('input[type=range]').forEach(fill);
     drawer.querySelectorAll('[data-k]').forEach((el) => (el.checked = !!settings[el.dataset.k]));
+    $('bScale').classList.toggle('on', !!settings.realScale);
     const on = settings.music && app.player.unlocked;
     $('bMusic').innerHTML = icon(on ? 'music' : 'musicOff');
     $('bMusic').classList.toggle('on', on);
@@ -413,6 +416,11 @@ export function createUI(app) {
   $('distClose').onclick = closeDist;
   const toggleDist = () => (dist.open ? closeDist() : openDist(focus || sun));
 
+  // ---------------------------------------------------------------- 真实比例
+  const scaleToast = () => toast(L(settings.realScale ? '真实比例：天体大小与距离按同一比例，行星小到看不见，靠标签定位' : '展示比例：放大天体、压缩距离，便于观看'), undefined, 4000);
+  const toggleScale = () => { app.setSetting({ realScale: !settings.realScale }, false); scaleToast(); };
+  $('bScale').onclick = toggleScale;
+
   // ---------------------------------------------------------------- 中英文切换：原地重绘所有动态文字，时间、聚焦与设置都保持不变
   const syncLangBtn = () => ($('bLang').textContent = isEn() ? '中' : 'EN');
   syncLangBtn();
@@ -491,7 +499,7 @@ export function createUI(app) {
     else if (k === '/') { e.preventDefault(); openSearch(); }
     else if (k === '?') setHelp(!$('help').classList.contains('open'));
     else {
-      const act = { d: toggleDist, c: () => { app.setSetting({ constellations: !settings.constellations }, false); toast(L(settings.constellations ? '星座连线已开启' : '星座连线已关闭')); }, l: toggleLang, h: toggleHide, r: () => $('bRev').click(), t: () => app.toggleTour(), o: () => app.overview(), m: () => $('bMusic').click(), s: () => $('bSettings').click(), i: toggleInfo, f: () => $('bFull').click() }[k.toLowerCase()];
+      const act = { p: toggleScale, d: toggleDist, c: () => { app.setSetting({ constellations: !settings.constellations }, false); toast(L(settings.constellations ? '星座连线已开启' : '星座连线已关闭')); }, l: toggleLang, h: toggleHide, r: () => $('bRev').click(), t: () => app.toggleTour(), o: () => app.overview(), m: () => $('bMusic').click(), s: () => $('bSettings').click(), i: toggleInfo, f: () => $('bFull').click() }[k.toLowerCase()];
       act?.();
     }
   });

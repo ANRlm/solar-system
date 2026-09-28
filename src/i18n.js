@@ -124,5 +124,8 @@ const EN = {
   '搜索（/）': 'Search (/)', '搜索': 'Search', '搜索天体': 'Search bodies', '搜索天体、卫星、彗星…': 'Search planets, moons, comets…', '没有找到“{0}”': 'No results for “{0}”',
   '距离工具': 'Distance tool', '关闭距离工具': 'Close distance tool', '交换起点与终点': 'Swap start and target', '起点': 'FROM', '终点': 'TO',
   '点击画面中的天体，或点此搜索': 'Click a body in the scene, or search', '选择起点': 'Choose the start…', '选择终点': 'Choose the target…', '测距': 'Measure', '距离': 'Distance',
+  '真实比例（P）': 'True scale (P)', '真实比例': 'True scale', '天体大小与距离按同一比例；关闭时放大天体、压缩距离': 'Sizes and distances on one scale; when off, bodies are enlarged and distances compressed',
+  '真实比例：天体大小与距离按同一比例，行星小到看不见，靠标签定位': 'True scale: sizes and distances share one scale — planets shrink to specks, so labels mark where they are',
+  '展示比例：放大天体、压缩距离，便于观看': 'Display scale: bodies enlarged and distances compressed for easy viewing',
   '星座连线': 'Constellations', '88 个星座的连线与名称': 'Lines and names of the 88 constellations', '星座连线已开启': 'Constellations on', '星座连线已关闭': 'Constellations off', '正在生成行星表面': 'Generating planet surfaces', '正在载入星表与地图数据': 'Loading star catalogue and map data',
 };

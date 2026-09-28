@@ -421,7 +421,7 @@ void main(){
 
 // ---------------------------------------------------------------- 太阳
 export const SUN_FRAG = /* glsl */ `${LOGF}
-uniform float uTime,uI;
+uniform float uTime,uI;uniform vec3 uCenter;
 varying vec2 vUv;varying vec3 vLocal,vPos;
 ${NOISE}
 float gran(vec3 p,float t){
@@ -436,7 +436,7 @@ float gran(vec3 p,float t){
 void main(){
   #include <logdepthbuf_fragment>
   vec3 p=normalize(vLocal);
-  vec3 V=normalize(cameraPosition-vPos),N=normalize(vPos);
+  vec3 V=normalize(cameraPosition-vPos),N=normalize(vPos-uCenter);
   float mu=max(dot(N,V),0.);
   float fw=length(fwidth(p));
   float t=uTime;
@@ -533,7 +533,7 @@ gl_FragColor=vec4(uColor,uAlpha*vA*(1.-smoothstep(.3,1.,abs(vEdge))));}`;
 // ---------------------------------------------------------------- 小行星带（顶点着色器内解开普勒方程）
 export const ROCK_VERT = /* glsl */ `${LOGV}
 attribute vec4 aOrb,aOrb2;attribute vec3 aAxis;attribute float aTone;
-uniform float uDays,uDayFrac,uPx;
+uniform float uDays,uDayFrac,uPx,uScaleK,uAU;uniform vec3 uOrigin;
 varying vec3 vN,vPos;varying float vTone,vFade;
 vec3 rot(vec3 v,vec3 k,float a){return v*cos(a)+cross(k,v)*sin(a)+k*dot(k,v)*(1.-cos(a));}
 void main(){
@@ -544,7 +544,8 @@ void main(){
   float cw=cos(w),sw=sin(w),cn=cos(node),sn=sin(node),ci=cos(inc),si=sin(inc);
   vec3 ec=vec3((cw*cn-sw*sn*ci)*xy.x+(-sw*cn-cw*sn*ci)*xy.y,(cw*sn+sw*cn*ci)*xy.x+(-sw*sn+cw*cn*ci)*xy.y,sw*si*xy.x+cw*si*xy.y);
   float r=length(ec);
-  vec3 c=vec3(ec.x,ec.z,-ec.y)*(60.*pow(r,.55)/r);
+  // 日心距离：展示比例 60·r^0.55 与真实比例 uAU·r 在对数空间按 uScaleK 插值；再减去渲染原点（相机）
+  vec3 c=vec3(ec.x,ec.z,-ec.y)*(exp(mix(log(60.*pow(r,.55)),log(uAU*r),uScaleK))/r)-uOrigin;
   float ang=fract(uDayFrac*aOrb2.w)*6.2831853;
   vN=rot(normal,aAxis,ang);
   float dc=length(c-cameraPosition),sz=max(aOrb2.z,uPx*dc*1.1);

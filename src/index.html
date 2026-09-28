@@ -345,6 +345,7 @@ html[lang=en] .ld-t{letter-spacing:.3em;margin-right:-.3em}
     <div class="tools">
       <button id="fpsPill" class="pill glass hit" title="性能详情" aria-haspopup="dialog"><b id="fps">--</b><small>FPS</small><canvas id="graph" width="104" height="36"></canvas></button>
       <button id="bSearch" class="ic hit autohide fade" data-ic="search" title="搜索（/）" aria-label="搜索"></button>
+      <button id="bScale" class="ic hit autohide fade" data-ic="scale" title="真实比例（P）" aria-label="真实比例"></button>
       <button id="bMusic" class="ic hit autohide fade" title="音乐（M）" aria-label="音乐开关"></button>
       <button id="bSettings" class="ic hit autohide fade" data-ic="sliders" title="设置（S）" aria-label="设置"></button>
       <button id="bHide" class="ic hit autohide fade" data-ic="eye" title="隐藏界面（H）" aria-label="隐藏界面"></button>
@@ -421,6 +422,7 @@ html[lang=en] .ld-t{letter-spacing:.3em;margin-right:-.3em}
     <section class="pane" data-pane="display">
       <div class="group"><h4>场景</h4>
         <div class="row"><span>轨道线</span><label class="sw-t"><input type="checkbox" data-k="orbits" aria-label="轨道线"><i></i></label></div>
+        <div class="row"><span>真实比例<small>天体大小与距离按同一比例；关闭时放大天体、压缩距离</small></span><label class="sw-t"><input type="checkbox" data-k="realScale" aria-label="真实比例"><i></i></label></div>
         <div class="row"><span>星座连线<small>88 个星座的连线与名称</small></span><label class="sw-t"><input type="checkbox" data-k="constellations" aria-label="星座连线"><i></i></label></div>
         <div class="row"><span>天体标签</span><label class="sw-t"><input type="checkbox" data-k="labels" aria-label="天体标签"><i></i></label></div>
         <div class="row"><span>小行星带</span><label class="sw-t"><input type="checkbox" data-k="belt" aria-label="小行星带"><i></i></label></div>
@@ -492,7 +494,7 @@ html[lang=en] .ld-t{letter-spacing:.3em;margin-right:-.3em}
       <span><kbd>M</kbd></span><span>音乐开关</span><span><kbd>S</kbd></span><span>设置</span>
       <span><kbd>H</kbd></span><span>隐藏界面</span><span><kbd>F</kbd></span><span>全屏</span>
       <span><kbd>/</kbd></span><span>搜索天体</span><span><kbd>D</kbd></span><span>距离工具</span>
-      <span><kbd>C</kbd></span><span>星座连线</span>
+      <span><kbd>C</kbd></span><span>星座连线</span><span><kbd>P</kbd></span><span>真实比例</span>
     </div>
   </div>
 </div>
