@@ -83,6 +83,8 @@ body.pre #ui,body.pre #labels{opacity:0;pointer-events:none}
 /* ---------- 弹出层 ---------- */
 .pop{position:absolute;top:calc(var(--top) - 6px);padding:14px 16px;opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .22s var(--ease),transform .22s var(--ease);background:var(--glass2)}
 .pop.open{opacity:1;transform:none;pointer-events:auto}
+/* 弹出层盖在信息卡、底栏之上（性能面板与右侧信息卡位置重叠） */
+.pop{z-index:4}
 #perfPop{right:170px;width:236px}
 #datePop{left:50%;margin-left:-160px;width:320px}
 .kvl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12px}

@@ -75,7 +75,7 @@ const maxSamples = gl.getParameter(gl.MAX_SAMPLES) || 4;
 const maxAniso = renderer.capabilities.getMaxAnisotropy();
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.002, 30000);
-camera.position.set(-160, 240, 620);
+camera.position.set(-160, 240, 620).multiplyScalar(3.2);
 const controls = new OrbitControls(camera, canvas);
 Object.assign(controls, { enableDamping: true, dampingFactor: 0.06, enablePan: false, rotateSpeed: 0.45, zoomSpeed: 0.9, maxDistance: 3000 });
 
@@ -1180,7 +1180,8 @@ const ui = createUI({
   setTime: (t) => { sim.t = Math.min(T_MAX, Math.max(T_MIN, t)); updateBodies(daysOf(sim.t)); },
   isOrbiting: () => controls.autoRotate && !nav.tour,
   setOrbit: (on) => { if (nav.tour) toggleTour(false); controls.autoRotate = on; controls.autoRotateSpeed = 0.35; },
-  enter: () => focusOn('earth', { dur: 6.5 }),
+  // 开场：从远处缓缓推进到全景
+  enter: () => { const p = shot('overview', 'overview'); focusOn('sun', { dir: p.dir, dist: p.dist, dur: 6.5, overview: true }); },
 });
 
 // ================================================================ 主循环
