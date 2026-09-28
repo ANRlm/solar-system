@@ -423,8 +423,7 @@ const kuiper = makeBelt(BELT_MAX / 2, (i) => {
 belt.geometry.instanceCount = settings.asteroids;
 kuiper.geometry.instanceCount = settings.asteroids / 2;
 
-// ---------------------------------------------------------------- 星空：真实星表 + 程序化银河
-const NGP = radec(192.85948 * DEG, 27.12825 * DEG), GC = radec(266.405 * DEG, -28.936 * DEG);
+// ---------------------------------------------------------------- 星空：真实星表 + 真实银河图（NASA SVS）
 const sky = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), new THREE.ShaderMaterial({
   vertexShader: S.SKY_VERT, fragmentShader: S.SKY_FRAG, side: THREE.BackSide, depthTest: false, depthWrite: false,
   uniforms: { uSky: { value: null }, uGain: { value: 1 } },
@@ -488,14 +487,30 @@ const constLines = (() => {
 const constNames = CONST.names.map(([zh, en, lon, lat]) => ({ zh, en, dir: radec((((lon % 360) + 360) % 360) * DEG, lat * DEG) }));
 
 // ================================================================ GPU 程序化纹理生成
-let landTex, milkyTex, texRTs = [];
+let landTex, texRTs = [];
 // 真实贴图：色彩按 sRGB 解码为线性；高程、云量是数据而非颜色，保持原值
 const realTex = {};
+// 银河图 8192×4096：显存不足以放下这么大纹理、或触屏设备上，先在画布里缩到 4096×2048
+// 不用 mipmap：屏幕上基本是 1:1 或放大；经度接缝处 mipmap 选级会出错
+function skyTexture(img) {
+  let src = img;
+  if (renderer.capabilities.maxTextureSize < 8192 || matchMedia('(pointer: coarse)').matches) {
+    src = document.createElement('canvas');
+    Object.assign(src, { width: 4096, height: 2048 });
+    const g = src.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(img, 0, 0, 4096, 2048);
+  }
+  const t = new THREE.Texture(src);
+  Object.assign(t, { colorSpace: THREE.NoColorSpace, wrapS: THREE.RepeatWrapping, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false, needsUpdate: true });
+  return t;
+}
 async function loadRealTextures() {
   await Promise.all(Object.entries(__TEX__).map(async ([name, b64]) => {
     const img = new Image();
     img.src = `data:image/webp;base64,${b64}`;
     await img.decode();
+    if (name === 'milkyway') return (sky.material.uniforms.uSky.value = skyTexture(img));
     const t = new THREE.Texture(img);
     Object.assign(t, {
       colorSpace: /height|clouds/.test(name) ? THREE.NoColorSpace : THREE.SRGBColorSpace,
@@ -514,7 +529,6 @@ async function generateTextures() {
     jobs.push({ b, name, w, h: w / 2 });
     if (two) jobs.push({ b, name, w, h: w / 2, passB: true });
   }
-  jobs.push({ name: 'SKY', w: Math.max(2048, base), h: Math.max(1024, base / 2) });
   const total = jobs.reduce((s, j) => s + j.w * j.h, 0);
   let done = 0;
   const old = texRTs;
@@ -529,7 +543,7 @@ async function generateTextures() {
       vertexShader: S.FS_VERT, fragmentShader: S.GEN_FRAG, depthTest: false, depthWrite: false,
       defines: { [j.name]: 1, RELIEF: (j.b?.def.relief ?? 1).toFixed(3), ...(j.passB && { PASS_B: 1 }) },
       uniforms: {
-        uMask: { value: j.name === 'SKY' ? milkyTex : landTex }, uNGP: { value: NGP }, uGC: { value: GC },
+        uMask: { value: landTex },
         uGrade: { value: new THREE.Vector2(...(j.b?.def.grade || [1, 1])) },
         uFeat: { value: j.b?.def.icy?.[0] ?? 0 }, uCol1: { value: new V3(...(j.b?.def.icy?.[1] || [0.5, 0.5, 0.5])) }, uCol2: { value: new V3(...(j.b?.def.icy?.[2] || [0.4, 0.4, 0.4])) },
         uCrat: { value: j.b?.def.icy?.[3] ?? 1 }, uSeed: { value: j.b?.def.icy?.[4] ?? 3 + bodies.indexOf(j.b) * 1.37 },
@@ -552,12 +566,9 @@ async function generateTextures() {
     renderer.setRenderTarget(null);
     quad.material.dispose();
     texRTs.push(rt);
-    if (j.name === 'SKY') sky.material.uniforms.uSky.value = rt.texture;
-    else {
-      const u = j.b.mat.uniforms;
-      u[j.passB ? 'uMapB' : 'uMapA'].value = rt.texture;
-      u.uTexel.value.set(1 / j.w, 1 / j.h);
-    }
+    const u = j.b.mat.uniforms;
+    u[j.passB ? 'uMapB' : 'uMapA'].value = rt.texture;
+    u.uTexel.value.set(1 / j.w, 1 / j.h);
   }
   quad.dispose();
   old.forEach((rt) => rt.dispose());
@@ -1219,11 +1230,10 @@ function loop(now) {
 
 (async function init() {
   ui.progress(0, L('正在载入星表与地图数据'));
-  const [land, milky] = await Promise.all([inflate(__LAND__), inflate(__MILKY__), buildStars(), loadRealTextures()]);
+  const [land] = await Promise.all([inflate(__LAND__), buildStars(), loadRealTextures()]);
   const mask = new Uint8Array(2048 * 1024);
   for (let i = 0; i < mask.length; i++) mask[i] = ((land[i >> 3] >> (i & 7)) & 1) * 255;
   landTex = redTex(mask, 2048, 1024);
-  milkyTex = redTex(milky, 1024, 512);
   stars.geometry.setDrawRange(0, starCount(settings.stars));
   buildComposer();
   addEventListener('resize', resize);

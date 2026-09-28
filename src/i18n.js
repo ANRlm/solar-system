@@ -54,7 +54,7 @@ export function applyDom() {
 // 整段替换（段内有链接等标记）
 const HTML_EN = {
   brandSub: 'REAL-TIME SIMULATION',
-  credits: 'Planet textures © <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>), based on NASA data · Lunar elevation NASA SVS · Stars from the Hipparcos catalogue · Milky Way outline d3-celestial · Coastlines Natural Earth',
+  credits: 'Planet textures © <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>), based on NASA data · Milky Way NASA/Goddard Space Flight Center Scientific Visualization Studio, Gaia DR2: ESA/Gaia/DPAC · Lunar elevation NASA SVS · Stars from the Hipparcos catalogue · Constellation lines d3-celestial · Coastlines Natural Earth',
 };
 
 const EN = {

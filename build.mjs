@@ -52,16 +52,6 @@ for (const f of feature(topo, topo.objects.land).features) {
 const landBits = new Uint8Array(LW * LH / 8);
 land.forEach((v, i) => v && (landBits[i >> 3] |= 1 << (i & 7)));
 
-// 银河亮度分层 1024×512（赤道坐标），ol1..ol5 叠加
-const MW = 1024, MH = 512;
-const milky = new Uint8Array(MW * MH);
-for (const f of json('./node_modules/d3-celestial/data/milkyway.json').features) {
-  const layer = new Uint8Array(MW * MH);
-  const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
-  for (const p of polys) rasterize(p, MW, MH, layer, 1);
-  layer.forEach((v, i) => (milky[i] += v * 50));
-}
-
 // 真实星表（到 8 等）：ra u16, dec i16, mag u8, bv i8
 const stars = json('./node_modules/d3-celestial/data/stars.8.json').features;
 const sv = new DataView(new ArrayBuffer(stars.length * 6));
@@ -88,7 +78,6 @@ const res = await build({
   entryPoints: ['src/main.js'], bundle: true, minify: true, format: 'esm', write: false,
   define: {
     __LAND__: JSON.stringify(b64(landBits)),
-    __MILKY__: JSON.stringify(b64(milky)),
     __STARS__: JSON.stringify(b64(new Uint8Array(sv.buffer))),
     __TEX__: JSON.stringify(tex),
     __CONST__: JSON.stringify(constellations),

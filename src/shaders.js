@@ -42,7 +42,7 @@ export const FS_VERT = /* glsl */ `varying vec2 vUv;void main(){vUv=uv;gl_Positi
 // ---------------------------------------------------------------- 纹理生成（等距圆柱投影）
 export const GEN_FRAG = /* glsl */ `
 uniform sampler2D uMask,uReal,uReal2,uReal3;
-uniform vec3 uNGP,uGC,uCol1,uCol2;
+uniform vec3 uCol1,uCol2;
 uniform vec2 uGrade;
 uniform int uFeat;
 uniform float uCrat,uSeed;
@@ -218,28 +218,6 @@ void main(){
   col=mix(C(.74,.53,.27),C(.60,.42,.22),ss(-.1,.3,n)*ss(35.,15.,abs(lat)));
   col=mix(col,C(.52,.38,.22),ss(70.,78.,lat)*ss(.1,.3,fbm(p*6.,4))*.6);
   h=.5+n*.05;
-#elif defined(SKY)
-  // 场景方向 → 赤道坐标，采样真实银河轮廓，叠加程序化尘埃带与星云
-  vec3 e=vec3(p.x,-p.z,p.y);
-  const float eps=.40909280;
-  vec3 q=vec3(e.x,e.y*cos(eps)-e.z*sin(eps),e.y*sin(eps)+e.z*cos(eps));
-  float ra=atan(q.y,q.x),dec=asin(clamp(q.z,-1.,1.));
-  vec2 muv=vec2(ra/(2.*PI)+.5,.5-dec/PI);
-  float mw=textureLod(uMask,muv,1.).r,mwb=textureLod(uMask,muv,3.).r;
-  float b=degrees(asin(clamp(dot(p,uNGP),-1.,1.)));
-  float gc=dot(p,uGC),gca=acos(clamp(gc,-1.,1.));
-  float n=fbm(p*5.,6)*.5+.5,nf=fbm(p*22.,5)*.5+.5;
-  float band=exp(-sq(b/(7.+7.*max(gc,0.))));
-  float bulge=exp(-sq(gca/.32))*exp(-sq(b/9.));
-  float dust=ss(.45,.75,fbm(p*8.+vec3(3.),6)*.5+.5+.15*ridged(p*14.,4))*exp(-sq(b/(3.+3.*max(gc,0.))));
-  float I=(mw*.9+mwb*.5)*(.5+.7*n)*(.65+.5*nf)+band*.18*n+bulge*.6;
-  I*=1.-dust*.7;
-  vec3 cw=mix(vec3(.62,.70,1.),vec3(1.,.82,.60),clamp(bulge*1.5+.35*max(gc,0.),0.,1.));
-  float neb=ss(.6,.85,fbm(p*4.+vec3(9.),5)*.5+.5)*band;
-  col=cw*I*.06+vec3(.85,.18,.22)*neb*.02+vec3(.25,.35,.95)*ss(.65,.9,fbm(p*3.+vec3(1.),4)*.5+.5)*band*.008;
-  col+=vec3(.0007,.0009,.0016);
-  gl_FragColor=vec4(sqrt(clamp(col*12.,0.,1.)),1.);
-  return;
 #endif
   col=mix(vec3(lum(col)),col,uGrade.y)*uGrade.x;
 #ifdef PASS_B
@@ -514,9 +492,15 @@ void main(){
 
 // ---------------------------------------------------------------- 星空
 export const SKY_VERT = /* glsl */ `varying vec3 vDir;void main(){vDir=position;vec4 c=projectionMatrix*vec4(mat3(viewMatrix)*position,1.);gl_Position=vec4(c.xy,c.w*.99999,c.w);}`;
+// 银河：NASA SVS Deep Star Maps 2020（赤道坐标等距圆柱投影，赤经 0h 居中、向左增大）。像素存 (辐亮度 / 0.25) 的立方根
 export const SKY_FRAG = /* glsl */ `uniform sampler2D uSky;uniform float uGain;varying vec3 vDir;
-void main(){vec3 d=normalize(vDir);float u=fract(atan(d.z,-d.x)/6.2831853),v=1.-acos(clamp(d.y,-1.,1.))/3.14159265;
-vec3 c=textureLod(uSky,vec2(u,v),0.).rgb;gl_FragColor=vec4(c*c/12.*uGain,1.);}`;
+void main(){vec3 p=normalize(vDir);
+vec3 e=vec3(p.x,-p.z,p.y);const float eps=.40909280;
+vec3 q=vec3(e.x,e.y*cos(eps)-e.z*sin(eps),e.y*sin(eps)+e.z*cos(eps));
+vec2 uv=vec2(fract(.5-atan(q.y,q.x)/6.2831853),.5+asin(clamp(q.z,-1.,1.))/3.14159265);
+vec3 c=textureLod(uSky,uv,0.).rgb;c=c*c*c*.25;
+// 黑点：减去弥漫的暗弱背景（约为全天中位亮度），深空回到纯黑，银河本身略提亮
+gl_FragColor=vec4(max(c-.0024,0.)*1.35*uGain,1.);}`;
 
 export const STAR_VERT = /* glsl */ `
 attribute float aI;attribute vec3 aColor;uniform float uPR,uGain;varying vec3 vCol;
