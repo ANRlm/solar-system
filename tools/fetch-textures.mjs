@@ -41,7 +41,7 @@ for (const [name, url, w, o = {}] of JOBS) {
 
 // 银河背景：NASA SVS Deep Star Maps 2020 的 milkyway_2020_8k.exr（赤道坐标，已去掉依巴谷 / 第谷亮星——亮星由星表单独绘制）
 // 线性辐亮度 → 除以 LMAX 后取立方根存成 8 位（暗部层次更多，着色器里再立方还原）；
-// 先中值 + 轻微模糊去掉逐像素的暗弱恒星颗粒（在屏幕上本就小于一个像素），WebP 体积从约 10 MB 降到约 2 MB
+// 先用 7×7 中值去掉暗弱恒星颗粒（点状物，中值能去掉它又保留尘埃带边缘；3×3 在 Retina 屏上放大后仍显得斑驳发脏），再轻微模糊；WebP 约 0.9 MB
 {
   const { EXRLoader } = await import('three/examples/jsm/loaders/EXRLoader.js');
   const THREE = await import('three');
@@ -61,8 +61,8 @@ for (const [name, url, w, o = {}] of JOBS) {
     const i = ((H - 1 - y) * W + x) * ch, o = (y * W + x) * 3;
     for (let k = 0; k < 3; k++) rgb[o + k] = Math.round(Math.cbrt(Math.min(1, Math.max(0, data[i + k] / LMAX))) * 255);
   }
-  const clean = await sharp(rgb, { raw: { width: W, height: H, channels: 3 }, limitInputPixels: false }).median(3).blur(0.6).raw().toBuffer();
+  const clean = await sharp(rgb, { raw: { width: W, height: H, channels: 3 }, limitInputPixels: false }).median(7).blur(0.7).raw().toBuffer();
   const out = 'assets/milkyway.webp';
-  await sharp(clean, { raw: { width: W, height: H, channels: 3 }, limitInputPixels: false }).webp({ quality: 78, effort: 6, smartSubsample: true }).toFile(out);
+  await sharp(clean, { raw: { width: W, height: H, channels: 3 }, limitInputPixels: false }).webp({ quality: 80, effort: 6, smartSubsample: true }).toFile(out);
   console.log(`${out.padEnd(26)} ${W}×${H}  ${(statSync(out).size / 1024).toFixed(0)} KB`);
 }

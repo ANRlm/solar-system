@@ -127,5 +127,6 @@ const EN = {
   '真实比例（P）': 'True scale (P)', '真实比例': 'True scale', '天体大小与距离按同一比例；关闭时放大天体、压缩距离': 'Sizes and distances on one scale; when off, bodies are enlarged and distances compressed',
   '真实比例：天体大小与距离按同一比例，行星小到看不见，靠标签定位': 'True scale: sizes and distances share one scale — planets shrink to specks, so labels mark where they are',
   '展示比例：放大天体、压缩距离，便于观看': 'Display scale: bodies enlarged and distances compressed for easy viewing',
+  '银河亮度': 'Milky Way brightness',
   '星座连线': 'Constellations', '88 个星座的连线与名称': 'Lines and names of the 88 constellations', '星座连线已开启': 'Constellations on', '星座连线已关闭': 'Constellations off', '正在生成行星表面': 'Generating planet surfaces', '正在载入星表与地图数据': 'Loading star catalogue and map data',
 };

@@ -269,6 +269,7 @@ export function createUI(app) {
   $('sTex').onchange = (e) => app.setSetting({ tex: +e.target.value });
   $('sMsaa').onchange = (e) => app.setSetting({ msaa: +e.target.value });
   $('sExposure').oninput = (e) => app.setSetting({ exposure: +e.target.value }, false);
+  $('sMilky').oninput = (e) => app.setSetting({ milky: +e.target.value }, false);
   $('sVolume').oninput = (e) => app.setSetting({ volume: +e.target.value }, false);
   drawer.querySelectorAll('[data-k]').forEach((el) => (el.onchange = () => {
     const k = el.dataset.k;
@@ -286,6 +287,8 @@ export function createUI(app) {
     $('sMsaa').value = settings.msaa;
     $('sExposure').value = settings.exposure;
     $('vExposure').textContent = settings.exposure.toFixed(2);
+    $('sMilky').value = settings.milky;
+    $('vMilky').textContent = `${Math.round(settings.milky * 100)}%`;
     $('sVolume').value = settings.volume;
     $('vVolume').textContent = `${Math.round(settings.volume * 100)}%`;
     drawer.querySelectorAll('input[type=range]').forEach(fill);

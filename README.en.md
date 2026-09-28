@@ -4,7 +4,7 @@
 
 **Live demo: <https://anrlm.github.io/solar-system/>**
 
-A cinematic, real-time Solar System in your browser. Positions come from real orbital elements; lighting, eclipses and comet tails follow the physics; the soundtrack is synthesised live. The whole thing is a single ~13 MB HTML file that also works offline.
+A cinematic, real-time Solar System in your browser. Positions come from real orbital elements; lighting, eclipses and comet tails follow the physics; the soundtrack is synthesised live. The whole thing is a single ~11 MB HTML file that also works offline.
 
 ![Overview](docs/hero-en.jpg)
 

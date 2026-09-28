@@ -499,8 +499,9 @@ vec3 e=vec3(p.x,-p.z,p.y);const float eps=.40909280;
 vec3 q=vec3(e.x,e.y*cos(eps)-e.z*sin(eps),e.y*sin(eps)+e.z*cos(eps));
 vec2 uv=vec2(fract(.5-atan(q.y,q.x)/6.2831853),.5+asin(clamp(q.z,-1.,1.))/3.14159265);
 vec3 c=textureLod(uSky,uv,0.).rgb;c=c*c*c*.25;
-// 黑点：减去弥漫的暗弱背景（约为全天中位亮度），深空回到纯黑，银河本身略提亮
-gl_FragColor=vec4(max(c-.0024,0.)*1.35*uGain,1.);}`;
+// 暗部趾部：全天中位亮度（约 0.0027）附近的弥漫薄雾平滑淡出到黑，否则远离银道的灰褐色斑驳显得脏；银河本身保留
+c*=smoothstep(.0022,.012,dot(c,vec3(.2126,.7152,.0722)));
+gl_FragColor=vec4(c*1.2*uGain,1.);}`;
 
 export const STAR_VERT = /* glsl */ `
 attribute float aI;attribute vec3 aColor;uniform float uPR,uGain;varying vec3 vCol;
@@ -589,18 +590,19 @@ const mat3 OM=mat3(1.60475,-.10208,-.00327,-.53108,1.10813,-.07276,-.07367,-.006
 // 场景 + 泛光（半分辨率泛光纹理线性采样，rgb·a 即原先加法混合的结果）
 vec3 src(vec2 uv){vec4 b=texture(tBloom,uv);return texture(tDiffuse,uv).rgb+b.rgb*(b.a*uBloom);}
 vec3 aces(vec3 v){v=IM*v;vec3 a=v*(v+.0245786)-.000090537,b=v*(.983729*v+.432951)+.238081;return clamp(OM*(a/b),0.,1.);}
+// 镜头光晕：只保留真实镜头里常见且克制的部分
+// · 鬼影：镜片间内反射，沿太阳—画面中心连线分布，小、淡、偏中性色
+// · 眩光：镜头内散射形成的平滑光晕（近似洛伦兹型点扩散函数），没有放射尖刺
+// 此前的横向蓝色光条（模仿变形宽银幕镜头）、噪声放射线与大光圈都显得假，已去掉
 vec3 flare(vec2 uv){
   vec2 as=vec2(uAspect,1.),p=(uv-.5)*as,s=(uSun-.5)*as;
   vec3 c=vec3(0.);
-  vec3 G[6]=vec3[](vec3(.45,.045,.5),vec3(.8,.02,.8),vec3(1.1,.11,.14),vec3(1.45,.06,.3),vec3(-.25,.03,.35),vec3(1.9,.2,.07));
-  vec3 GC[6]=vec3[](vec3(.3,.7,1.),vec3(1.,.55,.25),vec3(.4,1.,.55),vec3(.75,.45,1.),vec3(1.,.85,.4),vec3(.35,.55,1.));
-  for(int i=0;i<6;i++){float d=length(p+s*G[i].x);float r=G[i].y;
-    c+=GC[i]*G[i].z*.6*(ss(r,r*.55,d)*.5+exp(-sq((d-r)/(r*.1)))*.5);}
-  vec2 ds=p-s;float rr=length(ds),ang=atan(ds.y,ds.x);
-  c+=vec3(1.,.8,.6)*exp(-sq((rr-.34)/.012))*.035*(.6+.4*sin(ang*3.+1.));
-  c+=vec3(.4,.6,1.)*exp(-abs(ds.y)*260.)*exp(-abs(ds.x)*1.6)*1.1;
-  float burst=snoise(vec3(ang*9.,0.,uTime*.05))*.5+.5;
-  c+=vec3(1.,.9,.75)*exp(-rr*9.)*(.25+.75*pow(max(burst,0.),3.))*.5;
+  vec3 G[4]=vec3[](vec3(.55,.035,.16),vec3(1.1,.06,.09),vec3(1.5,.04,.11),vec3(-.3,.022,.12));
+  vec3 GC[4]=vec3[](vec3(.75,.85,1.),vec3(1.,.9,.75),vec3(.8,1.,.9),vec3(.9,.85,1.));
+  for(int i=0;i<4;i++){float d=length(p+s*G[i].x);float r=G[i].y;
+    c+=GC[i]*G[i].z*.35*(ss(r,r*.4,d)*.6+exp(-sq((d-r)/(r*.15)))*.4);}
+  float rr=length(p-s);
+  c+=vec3(1.,.92,.82)*(.05/(1.+sq(rr/.018))+.03*exp(-rr*5.));
   return c;
 }
 void main(){
