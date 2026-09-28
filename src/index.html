@@ -85,8 +85,10 @@ body.pre #ui,body.pre #labels{opacity:0;pointer-events:none}
 /* ---------- 弹出层 ---------- */
 .pop{position:absolute;top:calc(var(--top) - 6px);padding:14px 16px;opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .22s var(--ease),transform .22s var(--ease);background:var(--glass2)}
 .pop.open{opacity:1;transform:none;pointer-events:auto}
-/* 弹出层盖在信息卡、底栏之上（性能面板与右侧信息卡位置重叠） */
+/* 弹出层盖在信息卡、底栏之上（性能面板与右侧信息卡位置重叠）；关闭时（透明）不能接收点击，否则会挡住下面的设置抽屉。
+   搜索框、距离工具、漫游字幕同理：它们带 .hit，而 #ui .hit 的优先级高于只按 id 写的 pointer-events:none */
 .pop{z-index:4}
+#ui .pop:not(.open),#ui #search:not(.open),#ui #dist:not(.open),#ui #caption:not(.show){pointer-events:none}
 #perfPop{right:170px;width:236px}
 #datePop{left:50%;margin-left:-160px;width:320px}
 .kvl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12px}
@@ -166,7 +168,8 @@ body.drawer-open #info{opacity:0;transform:translateX(30px);pointer-events:none}
 .c-fact{margin-top:14px;font-size:14px;line-height:1.8;color:#e2e8ef;text-shadow:0 1px 14px rgba(0,0,0,.9)}
 .c-bar{margin-top:16px;width:220px;height:2px;background:rgba(255,255,255,.14);border-radius:2px;overflow:hidden}
 .c-bar i{display:block;height:100%;background:linear-gradient(90deg,#ffb35a,#ffe0a0);transform-origin:left;transform:scaleX(0)}
-.c-ctl{margin-top:12px;display:flex;align-items:center;gap:2px;pointer-events:auto}
+.c-ctl{margin-top:12px;display:flex;align-items:center;gap:2px}
+#caption.show .c-ctl{pointer-events:auto}
 #speed{width:110px;margin:0 8px 0 6px}
 #speedLbl{min-width:70px;font-size:12px;color:var(--fg2);text-align:center}
 #speedLbl.paused{color:var(--acc)}

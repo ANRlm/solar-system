@@ -1,10 +1,35 @@
-// 界面流程：全景状态、中英文切换、搜索、距离工具、星座连线、真实比例、设置抽屉音频页、快捷键面板、漫游时自动隐藏与恢复
+// 界面流程：隐形元素挡点击、全景状态、中英文切换、搜索、距离工具、星座连线、真实比例、设置抽屉音频页、快捷键面板、漫游时自动隐藏与恢复
 import { launch, open } from './open.mjs';
 const browser = await launch();
 const page = await browser.newPage();
 await page.setViewport({ width: 1440, height: 900 });
 const errors = await open(page);
 await new Promise((r) => setTimeout(r, 7000));
+// 看不见（透明）却会接收点击的元素：关闭的弹出层、搜索框、距离工具、漫游字幕若仍接收点击，会挡住下面的设置标签或画面
+// （设置里开关下的透明复选框是自定义开关的正常结构，打开设置前不在检查范围内）
+const ghosts = await page.evaluate(() => {
+  const out = [];
+  for (const el of document.querySelectorAll('body *')) {
+    const cs = getComputedStyle(el);
+    if (cs.pointerEvents === 'none' || cs.visibility === 'hidden' || cs.display === 'none') continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) continue;
+    let o = 1;
+    for (let e = el; e && e !== document.body; e = e.parentElement) o *= +getComputedStyle(e).opacity;
+    if (o < 0.02 && document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === el) out.push(el.id || el.className || el.tagName);
+  }
+  return out;
+});
+console.log('隐形却挡点击的元素:', ghosts.length ? ghosts : '无');
+if (ghosts.length) { console.error('FAIL 隐形元素挡点击'); process.exitCode = 1; }
+// 设置抽屉的四个标签都能切换
+await page.evaluate(() => document.getElementById('bSettings').click());
+await new Promise((r) => setTimeout(r, 600));
+const tabs = [];
+for (const t of ['display', 'audio', 'about', 'quality']) { await page.click(`[data-tab=${t}]`); tabs.push(await page.evaluate(() => document.querySelector('[data-pane].on').dataset.pane)); }
+console.log('设置标签:', tabs.join(','));
+if (tabs.join() !== 'display,audio,about,quality') { console.error('FAIL 设置标签'); process.exitCode = 1; }
+await page.keyboard.press('Escape');
 // 全景：不选中任何天体，信息卡显示太阳系；再点太阳才是聚焦太阳
 const state = () => page.evaluate(() => [document.getElementById('iName').textContent, document.querySelector('#nav .active')?.textContent.trim() || '', document.getElementById('bOverview').classList.contains('on')].join('|'));
 await page.keyboard.press('o');
