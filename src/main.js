@@ -938,10 +938,7 @@ function updateSunFx(dt) {
   // 太阳在镜头后方时投影点会镜像到画面内，必须关掉；离画面较远时贡献也可忽略，整个跳过以省下三次全屏渲染
   const inFront = camDir.dot(tmp2.copy(camera.position).negate()) > 0;
   const nearView = inFront ? 1 - smooth(1.2, 2.2, Math.max(Math.abs(p.x), Math.abs(p.y))) : 0;
-  // 体积光（屏幕空间径向模糊）是电影化手法：太阳被天体部分或完全遮住、光从边缘漏出时才有意义，此时满强度；
-  // 太阳完全可见时只留一点；太阳小到只有几个像素时关掉，否则会从单个亮像素拉出一圈放射尖刺
-  const hidden = smooth(0.03, 0.3, 1 - sunVis);
-  u.uRays.value = settings.rays ? 0.9 * (0.2 + 0.8 * hidden) * smooth(0.003, 0.015, frac) * (1 - smooth(0.25, 0.8, frac)) * nearView : 0;
+  u.uRays.value = settings.rays ? 0.9 * (1 - smooth(0.25, 0.8, frac)) * nearView : 0;
   raysPass.enabled = u.uRays.value > 0.002;
   // 靠近太阳时像真实相机一样压低曝光，才能看清米粒组织与黑子
   const close = smooth(0.1, 0.4, frac) * onScreen;
