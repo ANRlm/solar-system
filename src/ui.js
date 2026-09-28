@@ -103,7 +103,7 @@ export function createUI(app) {
   }
 
   // 时间条：宽屏在顶部居中，窄屏移入底部坞
-  const narrow = matchMedia('(max-width:1180px)');
+  const narrow = matchMedia('(max-width:1320px)');
   const placeTime = () => (narrow.matches ? $('timeSlotDock') : $('timeSlotTop')).append($('timebar'));
   narrow.addEventListener('change', placeTime);
   placeTime();

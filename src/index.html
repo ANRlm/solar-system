@@ -60,10 +60,12 @@ body.pre #ui,body.pre #labels{opacity:0;pointer-events:none}
 
 /* ---------- 顶栏 ---------- */
 #top{position:absolute;inset:0 0 auto 0;height:calc(var(--top) + 40px);padding:14px 18px 0 22px;display:flex;align-items:flex-start;gap:16px;background:linear-gradient(to bottom,rgba(0,0,0,.6),rgba(0,0,0,.25) 55%,transparent);transition:opacity .6s}
+/* 品牌与工具栏等分两侧空间（但不小于内容宽度）：空间够时时间条正好居中，不够时向一侧让开，不会重叠 */
+.brand,.tools{flex:1 1 0;min-width:max-content}
 .brand{padding-top:4px;pointer-events:none}
 .brand b{display:block;font-size:19px;font-weight:200;letter-spacing:.44em;line-height:1.2}
 .brand span{font-size:9px;letter-spacing:.36em;color:var(--mut)}
-#timeSlotTop{position:absolute;left:50%;top:14px;transform:translateX(-50%)}
+#timeSlotTop{flex:none}
 #timebar{display:flex;align-items:center;gap:2px;height:40px;padding:0 8px 0 6px;border-radius:14px}
 #clock{display:flex;align-items:center;gap:10px;height:30px;padding:0 10px;border-radius:9px;transition:background .2s}
 #clock:hover{background:rgba(255,255,255,.07)}
@@ -73,7 +75,7 @@ body.pre #ui,body.pre #labels{opacity:0;pointer-events:none}
 #timeSlotDock:empty{display:none}
 #timeSlotDock{border-top:1px solid var(--line);padding-top:4px;display:flex;justify-content:center}
 #timeSlotDock #timebar{background:none;border:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;height:38px}
-.tools{margin-left:auto;display:flex;align-items:center;gap:4px}
+.tools{display:flex;align-items:center;justify-content:flex-end;gap:4px}
 #fpsPill{gap:8px;padding:0 10px 0 12px;margin-right:6px}
 #fps{font-size:17px;font-weight:300;min-width:24px;text-align:right;transition:color .3s}
 #fps.good{color:#8ff0b8}#fps.ok{color:#ffd27a}#fps.bad{color:#ff7d6e}
@@ -291,7 +293,7 @@ html[lang=en] .ld-t{letter-spacing:.3em;margin-right:-.3em}
 #ldPct{margin-left:8px;color:var(--acc)}
 
 /* ---------- 窄屏 ---------- */
-@media (max-width:1180px){
+@media (max-width:1320px){
   #datePop{top:auto;bottom:calc(var(--dock-h) + 30px + var(--safe-b))}
 }
 @media (max-width:760px){
